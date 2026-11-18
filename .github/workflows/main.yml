@@ -48,7 +48,9 @@ jobs:
 # For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
   test-armui:
     name: "Test A.R.M UI"
-    runs-on: ubuntu-latest
+    # ubuntu-latest is Ubuntu 26.04, which has no Python 3.9 build for
+    # actions/setup-python. 24.04 still provides every version in the matrix.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python-version: ['3.9', '3.10', '3.11', '3.12']
@@ -85,5 +87,7 @@ jobs:
         sudo mkdir -p /opt/arm/arm /opt/arm/setup
         sudo cp -r arm/migrations /opt/arm/arm
         cp setup/arm.yaml /opt/arm/setup/arm.yaml
+    - name: Run unit tests
+      run: python -m pytest test -q
     - name: Run A.R.M ui
       run: timeout 1 python ./arm/runui.py || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
