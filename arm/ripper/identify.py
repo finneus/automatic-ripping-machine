@@ -17,6 +17,7 @@ import arm.config.config as cfg
 from arm.models import Job
 
 from arm.ripper import utils
+from arm.ripper.title_match import rank_results
 from arm.ripper.ProcessHandler import arm_subprocess
 from arm.ui import db
 
@@ -331,6 +332,33 @@ def update_job(job, search_results):
     return utils.database_updater(args, job)
 
 
+def select_matching_results(search_results, title, year=None):
+    """
+    Keep only the search results that really match the searched title.
+
+    update_job() uses the first entry of the result list, so the list must
+    not contain unrelated titles. A wrong year (for Blu-rays it is the date
+    of the disc's metadata file, not the film's year) otherwise makes the
+    provider return only films of that year, and the first one was taken
+    even if it had nothing to do with the disc.
+
+    :param search_results: dict in OMDB format or None
+    :param title: the title that was searched for
+    :param year: the year the search was filtered by, if any
+    :return: search_results with the best match first, or None if nothing matches
+    """
+    if not search_results or 'Search' not in search_results:
+        return search_results
+    matches = rank_results(search_results['Search'], str(title).replace('+', ' '),
+                           allow_continuation=not year)
+    if not matches:
+        logging.info(f"No search result matches the title {title!r}, ignoring "
+                     f"{[item.get('Title') for item in search_results['Search'][:3]]}")
+        return None
+    search_results['Search'] = matches
+    return search_results
+
+
 def metadata_selector(job, title=None, year=None):
     """
     Used to switch between OMDB or TMDB as the metadata provider\n
@@ -355,12 +383,12 @@ def metadata_selector(job, title=None, year=None):
     search_results = None
     if cfg.arm_config['METADATA_PROVIDER'].lower() == "tmdb":
         logging.debug("provider tmdb")
-        search_results = ui_utils.tmdb_search(title, year)
+        search_results = select_matching_results(ui_utils.tmdb_search(title, year), title, year)
         if search_results is not None:
             update_job(job, search_results)
     elif cfg.arm_config['METADATA_PROVIDER'].lower() == "omdb":
         logging.debug("provider omdb")
-        search_results = ui_utils.call_omdb_api(str(title), str(year))
+        search_results = select_matching_results(ui_utils.call_omdb_api(str(title), str(year)), title, year)
         if search_results is not None:
             update_job(job, search_results)
     else:
