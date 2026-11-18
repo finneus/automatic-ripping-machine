@@ -20,7 +20,7 @@ from arm.models import Job
 
 from arm.ripper import utils
 from arm.ripper.title_match import (rank_results, normalize_title, label_search_title, count_words,
-                                    min_words_after_shortening)
+                                    min_words_after_shortening, pick_by_disc_year)
 from arm.ripper.ProcessHandler import arm_subprocess
 from arm.ui import db
 
@@ -322,7 +322,7 @@ def get_video_details(job):
     logging.debug(f"Calling webservice with title: {title} and year: {year}")
 
     try:
-        identify_loop(job, None, title, year)
+        search_title(job, title, year)
     except Exception as error:
         logging.info(f"Identification failed with the error: {error}. Continuing...")
 
@@ -333,9 +333,24 @@ def get_video_details(job):
         if label_title and normalize_title(label_title) != normalize_title(title):
             logging.info(f"Nothing matched {title!r}, searching for the disc label {label_title!r}")
             try:
-                identify_loop(job, None, label_title, year)
+                search_title(job, label_title, year)
             except Exception as error:
                 logging.info(f"Identification by label failed with the error: {error}. Continuing...")
+
+
+def search_title(job, query, year):
+    """
+    Search the metadata provider for a title.
+
+    For a Blu-ray the year is the date of its bdmt_eng.xml - when the disc was made, which
+    is often years after the film (reissues) - so it is first used only as a hint for a search
+    without year (title_match.pick_by_disc_year). Only if that finds no film with exactly this
+    title does the year-filtered search of identify_loop() run.
+    """
+    if getattr(job, "disctype", None) == "bluray" and year:
+        if metadata_selector(job, query, disc_year=int(str(year)[:4])) is not None:
+            return
+    identify_loop(job, None, query, year)
 
 
 def update_job(job, search_results):
@@ -367,7 +382,7 @@ def update_job(job, search_results):
     return utils.database_updater(args, job)
 
 
-def select_matching_results(search_results, title, year=None):
+def select_matching_results(search_results, title, year=None, disc_year=None):
     """
     Keep only the search results that really match the searched title.
 
@@ -380,9 +395,17 @@ def select_matching_results(search_results, title, year=None):
     :param search_results: dict in OMDB format or None
     :param title: the title that was searched for
     :param year: the year the search was filtered by, if any
+    :param disc_year: Blu-ray disc year for a search without year, see title_match.pick_by_disc_year()
     :return: search_results with the best match first, or None if nothing matches
     """
     if not search_results or 'Search' not in search_results:
+        return search_results
+    if disc_year:
+        pick = pick_by_disc_year(search_results['Search'], str(title).replace('+', ' '), disc_year)
+        if pick is None:
+            logging.info(f"No result is exactly {title!r} and not newer than the disc ({disc_year})")
+            return None
+        search_results['Search'] = [pick]
         return search_results
     matches = rank_results(search_results['Search'], str(title).replace('+', ' '),
                            allow_continuation=not year)
@@ -394,7 +417,7 @@ def select_matching_results(search_results, title, year=None):
     return search_results
 
 
-def metadata_selector(job, title=None, year=None):
+def metadata_selector(job, title=None, year=None, disc_year=None):
     """
     Used to switch between OMDB or TMDB as the metadata provider\n
     - TMDB returned queries are converted into the OMDB format
@@ -402,6 +425,7 @@ def metadata_selector(job, title=None, year=None):
     :param job: The job class
     :param title: this can either be a search string or movie/show title
     :param year: the year of movie/show release
+    :param disc_year: Blu-ray disc year; search without year and use it only as a hint
 
     :return: json/dict object or None
     """
@@ -418,12 +442,13 @@ def metadata_selector(job, title=None, year=None):
     search_results = None
     if cfg.arm_config['METADATA_PROVIDER'].lower() == "tmdb":
         logging.debug("provider tmdb")
-        search_results = select_matching_results(ui_utils.tmdb_search(title, year), title, year)
+        search_results = select_matching_results(ui_utils.tmdb_search(title, year), title, year, disc_year)
         if search_results is not None:
             update_job(job, search_results)
     elif cfg.arm_config['METADATA_PROVIDER'].lower() == "omdb":
         logging.debug("provider omdb")
-        search_results = select_matching_results(ui_utils.call_omdb_api(str(title), str(year)), title, year)
+        search_results = select_matching_results(ui_utils.call_omdb_api(str(title), str(year)), title, year,
+                                                 disc_year)
         if search_results is not None:
             update_job(job, search_results)
     else:
