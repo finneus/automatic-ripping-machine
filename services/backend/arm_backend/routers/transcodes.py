@@ -13,6 +13,7 @@ import asyncio
 import io
 import zipfile
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -27,7 +28,7 @@ from arm_backend.log_reader import LOG_DIR, effective_cap, file_log_lines, file_
 from arm_common import Gpu, GpuStatus, SessionApplication, TranscodeTaskStatus, User
 from arm_common.encoders import gpu_is_usable
 from arm_common.models import TranscodeTask
-from arm_common.schemas import TranscodeStatsView, TranscodeTaskView, TranscodeWorkerView
+from arm_common.schemas import TranscodeCleanupResult, TranscodeStatsView, TranscodeTaskView, TranscodeWorkerView
 
 router = APIRouter(prefix="/api/transcodes", tags=["transcodes"])
 
@@ -218,10 +219,17 @@ async def delete_transcode(
         return
 
     # QUEUED or terminal (DONE/FAILED): delete synchronously and emit.
+    await _delete_task_row(db, getattr(request.app.state, "ws_hub", None), row)
+    await db.commit()
+
+
+async def _delete_task_row(db: AsyncSession, hub: Any, row: TranscodeTask) -> None:
+    """Delete one task that is not running, release any GPU it holds, and emit `task.deleted`; the caller commits."""
     application = (
         await db.execute(select(SessionApplication).where(col(SessionApplication.id) == row.session_application_id))
     ).scalar_one_or_none()
     job_id = application.job_id if application is not None else None
+    task_id = row.id
     track_id = row.source_track_id
     application_id = row.session_application_id
 
@@ -230,7 +238,6 @@ async def delete_transcode(
     await release_gpu_for_task(db, task_id)
     await db.delete(row)
 
-    hub = getattr(request.app.state, "ws_hub", None)
     if hub is not None:
         await hub.emit(
             topic="transcode.events",
@@ -240,4 +247,26 @@ async def delete_transcode(
             track_id=track_id,
             session=db,
         )
+
+
+_FINISHED_STATUSES = (TranscodeTaskStatus.DONE, TranscodeTaskStatus.FAILED)
+
+
+@router.post("/cleanup", response_model=TranscodeCleanupResult)
+async def cleanup_finished_transcodes(
+    request: Request,
+    _: User = Depends(require_writer),
+    db: AsyncSession = Depends(get_session),
+) -> TranscodeCleanupResult:
+    """Delete every finished (done or failed) transcode task, each as `DELETE /{task_id}` deletes one; queued and
+    running tasks are left alone. Backs the Files page's "Clean up transcoder jobs" action."""
+    rows = list(
+        (await db.execute(select(TranscodeTask).where(col(TranscodeTask.status).in_(_FINISHED_STATUSES))))
+        .scalars()
+        .all()
+    )
+    hub = getattr(request.app.state, "ws_hub", None)
+    for row in rows:
+        await _delete_task_row(db, hub, row)
     await db.commit()
+    return TranscodeCleanupResult(deleted=len(rows), errors=[])

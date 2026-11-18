@@ -4428,6 +4428,33 @@
         }
       }
     },
+    "/api/transcodes/cleanup": {
+      "post": {
+        "tags": [
+          "transcodes"
+        ],
+        "summary": "Cleanup Finished Transcodes",
+        "description": "Delete every finished (done or failed) transcode task, each as `DELETE /{task_id}` deletes one; queued and\nrunning tasks are left alone. Backs the Files page's \"Clean up transcoder jobs\" action.",
+        "operationId": "cleanup_finished_transcodes_api_transcodes_cleanup_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscodeCleanupResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserJWT": []
+          }
+        ]
+      }
+    },
     "/api/gpus": {
       "get": {
         "tags": [
@@ -17603,6 +17630,28 @@
           "last_error"
         ],
         "title": "TrackView"
+      },
+      "TranscodeCleanupResult": {
+        "properties": {
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "errors"
+        ],
+        "title": "TranscodeCleanupResult",
+        "description": "What `POST /api/transcodes/cleanup` removed: the number of finished tasks deleted, and any per-task errors."
       },
       "TranscodePresetCreateRequest": {
         "properties": {

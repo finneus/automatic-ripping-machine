@@ -5276,6 +5276,22 @@ export type TrackView = {
 };
 
 /**
+ * TranscodeCleanupResult
+ *
+ * What `POST /api/transcodes/cleanup` removed: the number of finished tasks deleted, and any per-task errors.
+ */
+export type TranscodeCleanupResult = {
+    /**
+     * Deleted
+     */
+    deleted: number;
+    /**
+     * Errors
+     */
+    errors: Array<string>;
+};
+
+/**
  * TranscodePresetCreateRequest
  */
 export type TranscodePresetCreateRequest = {
@@ -8371,6 +8387,22 @@ export type DeleteTranscodeApiTranscodesTaskIdDeleteResponses = {
 };
 
 export type DeleteTranscodeApiTranscodesTaskIdDeleteResponse = DeleteTranscodeApiTranscodesTaskIdDeleteResponses[keyof DeleteTranscodeApiTranscodesTaskIdDeleteResponses];
+
+export type CleanupFinishedTranscodesApiTranscodesCleanupPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/transcodes/cleanup';
+};
+
+export type CleanupFinishedTranscodesApiTranscodesCleanupPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: TranscodeCleanupResult;
+};
+
+export type CleanupFinishedTranscodesApiTranscodesCleanupPostResponse = CleanupFinishedTranscodesApiTranscodesCleanupPostResponses[keyof CleanupFinishedTranscodesApiTranscodesCleanupPostResponses];
 
 export type ListGpusApiGpusGetData = {
     body?: never;

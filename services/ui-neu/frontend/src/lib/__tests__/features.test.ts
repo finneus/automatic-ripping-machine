@@ -17,8 +17,12 @@ describe('features', () => {
 		expect(isScreenEnabled('/')).toBe(true);
 	});
 
-	it('disables in-screen features whose v3 backend is MISSING (maintenance)', () => {
-		expect(features.maintenance).toBe(false);
+	it('disables in-screen features whose v3 backend is MISSING (orphan folders)', () => {
+		expect(features.orphanFolders).toBe(false);
+	});
+
+	it('enables transcoder job cleanup, which has a v3 backend', () => {
+		expect(features.transcoderCleanup).toBe(true);
 	});
 
 	it('in-screen flags are not route flags', () => {

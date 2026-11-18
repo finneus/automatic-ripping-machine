@@ -111,7 +111,7 @@ function orphans(...names: string[]): OrphanFoldersResponse {
 }
 
 beforeEach(() => {
-	(features as { maintenance: boolean }).maintenance = true;
+	Object.assign(features, { orphanFolders: true, transcoderCleanup: true });
 	setUrl('http://localhost/files');
 	setRole('admin');
 	dirs = {

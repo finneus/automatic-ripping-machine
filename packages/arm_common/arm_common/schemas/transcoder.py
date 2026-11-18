@@ -90,6 +90,13 @@ class TranscodeStatsView(BaseModel):
     queued_encode_tasks: int = 0
 
 
+class TranscodeCleanupResult(BaseModel):
+    """What `POST /api/transcodes/cleanup` removed: the number of finished tasks deleted, and any per-task errors."""
+
+    deleted: int
+    errors: list[str]
+
+
 class GpuView(BaseModel):
     """One row of the DB-authoritative GPU inventory (Settings > GPUs)."""
 

@@ -50,7 +50,7 @@ function setup(selected: string[] = []) {
 beforeEach(() => {
 	mockDir.mockReset();
 	setRole('admin');
-	(features as { maintenance: boolean }).maintenance = true;
+	Object.assign(features, { orphanFolders: true, transcoderCleanup: true });
 });
 
 afterEach(cleanup);
@@ -66,7 +66,7 @@ describe('FilesToolbar', () => {
 	});
 
 	it('hides the maintenance buttons when maintenance is off', () => {
-		(features as { maintenance: boolean }).maintenance = false;
+		Object.assign(features, { orphanFolders: false, transcoderCleanup: false });
 		setup();
 		expect(screen.queryByTitle('Orphan folders')).toBeNull();
 		expect(screen.queryByTitle('Clean up transcoder jobs')).toBeNull();
@@ -79,6 +79,20 @@ describe('FilesToolbar', () => {
 		expect(screen.getByTitle('Clean up transcoder jobs')).toBeTruthy();
 		expect(screen.queryByText(/^Move /)).toBeNull();
 		expect(screen.queryByText(/^Delete /)).toBeNull();
+	});
+
+	it('shows only the transcoder cleanup button while orphan folders are off', () => {
+		Object.assign(features, { orphanFolders: false, transcoderCleanup: true });
+		setup();
+		expect(screen.queryByTitle('Orphan folders')).toBeNull();
+		expect(screen.getByTitle('Clean up transcoder jobs')).toBeTruthy();
+	});
+
+	it('shows only the orphan folders button while transcoder cleanup is off', () => {
+		Object.assign(features, { orphanFolders: true, transcoderCleanup: false });
+		setup();
+		expect(screen.getByTitle('Orphan folders')).toBeTruthy();
+		expect(screen.queryByTitle('Clean up transcoder jobs')).toBeNull();
 	});
 
 	it('shows the selection count in the Move and Delete labels', () => {

@@ -9,7 +9,8 @@ export const features = {
 	transcoder: true, // additionally gated at runtime by transcoderEnabled
 	files: true,
 	// In-screen flags (not in ROUTE_FLAGS): they hide entry points inside a screen.
-	maintenance: false // Files orphan folders + transcoder job cleanup: APIs MISSING in v3
+	orphanFolders: false, // Files orphan-folder finder/cleanup: API MISSING in v3
+	transcoderCleanup: true // Files "Clean up transcoder jobs": POST /api/transcodes/cleanup
 } as const;
 
 const ROUTE_FLAGS: Record<string, keyof typeof features> = {

@@ -50,7 +50,7 @@ beforeEach(() => {
 	mockFetch.mockReset();
 	mockDelete.mockReset();
 	mockBulk.mockReset();
-	(features as { maintenance: boolean }).maintenance = true;
+	Object.assign(features, { orphanFolders: true, transcoderCleanup: true });
 });
 
 describe('OrphanFoldersModal', () => {
@@ -60,7 +60,7 @@ describe('OrphanFoldersModal', () => {
 	});
 
 	it('renders nothing when maintenance is off, even if open', async () => {
-		(features as { maintenance: boolean }).maintenance = false;
+		Object.assign(features, { orphanFolders: false, transcoderCleanup: false });
 		const orphans = setup();
 		await openWith(orphans, listing());
 		expect(screen.queryByText('Orphan Folders')).toBeNull();

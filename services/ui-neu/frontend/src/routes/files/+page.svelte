@@ -373,7 +373,7 @@
 />
 
 <!-- Transcoder cleanup confirmation -->
-{#if features.maintenance}
+{#if features.transcoderCleanup}
 	<ConfirmDialog
 		open={transcoderCleanupOpen}
 		title="Clean Up Transcoder"

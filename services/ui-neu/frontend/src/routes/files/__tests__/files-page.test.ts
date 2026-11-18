@@ -25,7 +25,7 @@ vi.mock('$lib/features', async (importOriginal) => {
 });
 
 function setMaintenance(on: boolean) {
-	(features as { maintenance: boolean }).maintenance = on;
+	Object.assign(features, { orphanFolders: on, transcoderCleanup: on });
 }
 
 vi.mock('$app/stores', async () => {

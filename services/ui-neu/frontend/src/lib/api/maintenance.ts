@@ -1,9 +1,9 @@
 import { notAvailable } from './_stub';
 import { get, post } from './client';
 
-// Orphan folder cleanup and transcoder job cleanup have no v3 backend. The Files
-// page hides them behind features.maintenance, and these stubs reject before any
-// fetch. The image-cache endpoints are real.
+// Orphan folder cleanup has no v3 backend: the Files page hides it behind
+// features.orphanFolders, and these stubs reject before any fetch. Transcoder job
+// cleanup and the image-cache endpoints are real.
 //
 // The shapes the (dormant) maintenance UI reads are declared locally here and
 // re-exported under the names the pages import; api.gen no longer carries them.
@@ -61,8 +61,9 @@ export async function bulkDeleteFolders(_paths: string[]): Promise<MaintenanceBu
 	notAvailable('Maintenance bulk-delete folders');
 }
 
-export async function cleanupTranscoder(): Promise<CleanupTranscoderResult> {
-	notAvailable('Cleanup transcoder');
+// Deletes every finished (done or failed) transcode task; queued and running ones stay.
+export function cleanupTranscoder(): Promise<CleanupTranscoderResult> {
+	return post<CleanupTranscoderResult>('/api/transcodes/cleanup');
 }
 
 export function fetchImageCacheStats(): Promise<ImageCacheStats> {

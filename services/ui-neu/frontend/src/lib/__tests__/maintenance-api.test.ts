@@ -18,7 +18,7 @@ import {
 
 beforeEach(() => mockFetch.mockReset());
 
-// Orphan cleanup / maintenance largely has no v3 backend; those functions are
+// Orphan-folder cleanup has no v3 backend; those functions are
 // stubs that reject before any fetch. The image-cache stats/clear endpoints DO
 // exist (image_cache.stats()/clear()) and hit the real backend.
 describe('maintenance MISSING stubs', () => {
@@ -33,9 +33,14 @@ describe('maintenance MISSING stubs', () => {
 	it('bulkDeleteFolders rejects', async () => {
 		await expect(bulkDeleteFolders(['/raw/a'])).rejects.toThrow(/not yet available in v3/);
 	});
+});
 
-	it('cleanupTranscoder rejects', async () => {
-		await expect(cleanupTranscoder()).rejects.toThrow(/not yet available in v3/);
+describe('transcoder cleanup (real backend)', () => {
+	it('cleanupTranscoder POSTs /api/transcodes/cleanup', async () => {
+		mockFetch.mockResolvedValue(jsonResponse({ deleted: 3, errors: [] }));
+		const result = await cleanupTranscoder();
+		expect(mockFetch).toHaveBeenCalledWith('/api/transcodes/cleanup', expect.objectContaining({ method: 'POST' }));
+		expect(result).toEqual({ deleted: 3, errors: [] });
 	});
 });
 
