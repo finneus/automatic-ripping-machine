@@ -684,6 +684,48 @@ async def test_rip_disc_passes_minlength_to_makemkvcon(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_rip_disc_single_title_names_it_and_leaves_minlength_to_makemkv(monkeypatch, tmp_path):
+    """A single-title rip names the scan's title id instead of `all` and
+    passes no `--minlength`, so MakeMKV numbers the titles exactly as the
+    scan's `info` (which passes none either) did. Its one file is the title's."""
+    captured: dict[str, Any] = {}
+    fake = _FakeProc([b'MSG:5036,0,2,"done","%1 %2","1","titles"\n'])
+
+    async def fake_create_subprocess_exec(*args: Any, **_kwargs: Any) -> _FakeProc:
+        captured["argv"] = list(args)
+        _write_title_file(tmp_path, 3, b"main feature")
+        return fake
+
+    monkeypatch.setattr(makemkv_rip.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    result = await rip_disc(
+        device_path="/dev/sr0",
+        output_dir=tmp_path,
+        minlength_seconds=900,
+        eligible_source_indexes=[3],
+        title_index=3,
+    )
+
+    argv = captured["argv"]
+    assert "all" not in argv
+    assert not [a for a in argv if a.startswith("--minlength")]
+    assert argv[-2:] == ["3", str(tmp_path)]
+    assert result.overall_error is None
+    assert list(result.titles) == [3]
+    assert result.titles[3].output_path == tmp_path / "title_t03.mkv"
+    assert result.titles[3].sha256 == hashlib.sha256(b"main feature").hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("title_index", "expected"),
+    [(None, "all minlength=900s"), (3, "title 3")],
+    ids=["all", "one-title"],
+)
+def test_rip_scope_says_what_the_rip_reads(title_index, expected):
+    assert makemkv_rip._rip_scope(900, title_index) == expected
+
+
+@pytest.mark.asyncio
 async def test_msg_5021_surfaces_distinct_error_and_kills_proc(monkeypatch, tmp_path):
     """When MakeMKV emits MSG:5021 (binary kill-switch), rip_disc kills
     the subprocess from inside the streamer and returns a distinct

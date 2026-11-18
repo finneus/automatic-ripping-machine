@@ -60,6 +60,19 @@ def _eligible_source_indexes(track_by_index: dict[int, TrackView], min_length_se
     )
 
 
+def _single_title(track_by_index: dict[int, TrackView], eligible: list[int], skipped: set[int]) -> int | None:
+    """The title to rip on its own: the only eligible title the operator kept (not `excluded`) that no earlier pass
+    settled; None when that is more than one title, or none."""
+    kept = [idx for idx in eligible if idx not in skipped and not track_by_index[idx].excluded]
+    return kept[0] if len(kept) == 1 else None
+
+
+def _kept_tracks(track_by_index: dict[int, TrackView]) -> dict[int, TrackView]:
+    """The tracks a single-title rip reports on. An excluded title is never read off the disc, so it gets no outcome
+    and stays queued."""
+    return {idx: track for idx, track in track_by_index.items() if not track.excluded}
+
+
 def _first_eligible_track(track_by_index: dict[int, TrackView], eligible: list[int]) -> TrackView | None:
     """The track for the first eligible title, which carries the disc-level progress; None when nothing is eligible."""
     return track_by_index[eligible[0]] if eligible else None
@@ -118,6 +131,7 @@ class _OpticalRip:
         min_length_seconds: int,
         stop: asyncio.Event | None,
         drive_lost: Callable[[], bool] | None,
+        title_index: int | None,
     ) -> None:
         self._device_path = device_path
         self._output_dir = output_dir
@@ -130,6 +144,7 @@ class _OpticalRip:
         self._min_length_seconds = min_length_seconds
         self._stop = stop
         self._drive_lost = drive_lost
+        self._title_index = title_index
         self._started: set[int] = set(skipped)
         # Source indexes whose Track has already been PATCHed DONE via the
         # streamer's mid-rip on_title_done callback. The post-rip
@@ -277,6 +292,7 @@ class _OpticalRip:
                 on_title_done=self._on_title_done,
                 hash_outputs=False,
                 stop=self._stop,
+                title_index=self._title_index,
             )
             _delete_skipped_outputs(self._output_dir, self._eligible, self._skipped)
             if disc_result.overall_error is None and self._drive_dropped():
@@ -378,7 +394,9 @@ async def rip_optical(
     """Single-invocation DVD/BD rip with per-title attribution.
 
     The makemkvcon invocation rips every title ≥ minlength to
-    `output_dir`. We map title_index → TrackView via `source_ref` and
+    `output_dir`, or, when the operator kept exactly one eligible title,
+    just that title (`_single_title`); the excluded tracks then get no
+    callbacks. We map title_index → TrackView via `source_ref` and
     fan the lifecycle callbacks out as MakeMKV's stream announces each
     title. Tracks whose `source_ref` doesn't parse as an int are
     failed up front — same shape as the per-title implementation.
@@ -412,6 +430,13 @@ async def rip_optical(
     # drive dropped off the bus): makemkvcon rips them again, as `mkv all`
     # does, but they get no callbacks and their new files are deleted.
     skipped = {idx for idx, t in track_by_index.items() if t.id in skip_track_ids}
+    # One kept title (a main-feature rip) is ripped on its own: `mkv all`
+    # would read every other title off the disc too, and pair its first file
+    # with the kept title when the operator's review didn't list the others.
+    title_index = _single_title(track_by_index, eligible_source_indexes, skipped)
+    if title_index is not None:
+        track_by_index = _kept_tracks(track_by_index)
+        eligible_source_indexes = [title_index]
     await _OpticalRip(
         device_path=device_path,
         output_dir=output_dir,
@@ -424,6 +449,7 @@ async def rip_optical(
         min_length_seconds=min_length_seconds,
         stop=stop,
         drive_lost=drive_lost,
+        title_index=title_index,
     ).run()
 
 
