@@ -193,9 +193,7 @@ def save_settings():
         arm_cfg = ui_utils.build_arm_cfg(request.form.to_dict(), comments)
         # Save updated arm.yaml
         try:
-            with open(cfg.arm_config_path, "w") as settings_file:
-                settings_file.write(arm_cfg)
-                settings_file.close()
+            cfg.write_config_file(cfg.arm_config_path, arm_cfg)
             success = True
             importlib.reload(cfg)
             # Set the ARM Log level to the config
@@ -330,6 +328,7 @@ def server_info():
 
 
 @route_settings.route('/systemdrivescan')
+@login_required
 def system_drive_scan():
     """
     Page - systemdrivescan
@@ -393,7 +392,7 @@ def drive_manual(manual_id):
     """
 
     drive = SystemDrives.query.filter_by(drive_id=manual_id).first()
-    dev_path = drive.mount.lstrip('/dev/')
+    dev_path = drive.mount.removeprefix('/dev/')
 
     cmd = os.path.join(
         cfg.arm_config["INSTALLPATH"],
@@ -442,6 +441,7 @@ def testapprise():
 
 
 @route_settings.route('/updatesysinfo')
+@login_required
 def update_sysinfo():
     """
     Update system information

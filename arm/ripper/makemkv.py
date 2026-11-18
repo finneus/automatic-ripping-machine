@@ -478,6 +478,11 @@ class MakeMkvRuntimeError(RuntimeError):
         if stderr is not None:
             logging.debug(f"MakeMKV stderr: {stderr}")
         self.message = f"Call to MakeMKV failed with code: {returncode}"
+        # Add the first line of output (e.g. "0 titles were saved") so the
+        # reason survives into the job log, job.errors and notifications.
+        detail = next((line.strip() for line in str(output or "").splitlines() if line.strip()), "")
+        if detail:
+            self.message += f": {detail[:200]}"
         logging.error(self.message)
         super().__init__(self.message)
 
@@ -695,6 +700,8 @@ def makemkv_mkv(job, rawpath):
         logging.info("Trying to find mainfeature (sorting by chapters desc, filesize desc, track_number asc)")
         track = Track.query.filter_by(job_id=job.job_id).order_by(
             Track.chapters.desc(), Track.filesize.desc(), Track.track_number.asc()).first()
+        if track is None:
+            raise utils.RipperException("MakeMKV found no titles to rip (MAINFEATURE is enabled)")
         rip_mainfeature(job, track, rawpath)
     elif mode == 'manual':  # Run if mode is manual, user selects tracks
         # Set job status to waiting
@@ -763,11 +770,15 @@ def makemkv(job):
         db.session.refresh(job)
         # If job.drive is still None after refresh, log warning with available info
         if job.drive is None:
+            # Everything below reads job.drive.mdisc, so stop with a clear error
+            # instead of an AttributeError on None.
             if disc_index is not None:
-                logging.warning(f"job.drive is None but found disc index {disc_index} for {job.devpath}")
+                message = (f"Drive {job.devpath} (MakeMKV disc index {disc_index}) "
+                           f"is not linked to job {job.job_id}")
             else:
-                logging.error(f"Could not find drive for {job.devpath}")
-                raise ValueError(f"No drive found for device {job.devpath}")
+                message = f"No drive found for device {job.devpath}"
+            logging.error(message)
+            raise ValueError(message)
     logging.info(f"MakeMKV disc number: {job.drive.mdisc:d}")
     # get filesystem in order
     rawpath = setup_rawpath(job, os.path.join(str(job.config.RAW_PATH), str(job.title)))
@@ -1268,27 +1279,57 @@ def run(options, select):
     logging.debug(f"command: '{' '.join(cmd)}'")
     with subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True) as proc:
         logging.debug(f"PID {proc.pid}: command: '{' '.join(cmd)}'")
-        for line in proc.stdout:
-            line = line.rstrip(os.linesep)
-            logging.debug(line)  # Maybe write the raw output to a separate log
-            if proc.returncode:
-                buffer.append(line)
-                continue
-            try:
-                msg_type, data = parse_line(line)
-            except MakeMkvParserError as err:
-                logging.warning(err)
-                buffer.append(line)
-                continue
-            logging.debug(data)
-            if msg_type in select:
-                yield data
+        try:
+            for line in proc.stdout:
+                line = line.rstrip(os.linesep)
+                logging.debug(line)  # Maybe write the raw output to a separate log
+                if proc.returncode:
+                    buffer.append(line)
+                    continue
+                try:
+                    msg_type, data = parse_line(line)
+                except MakeMkvParserError as err:
+                    logging.warning(err)
+                    buffer.append(line)
+                    continue
+                logging.debug(data)
+                if msg_type in select:
+                    yield data
+        except BaseException:
+            # We stopped reading early: an error in the caller, SIGTERM from
+            # "Abandon Job", or the generator being closed. Leaving the Popen
+            # block would wait() for makemkvcon to exit on its own, which can
+            # take forever while it keeps holding the drive.
+            _stop_makemkvcon(proc)
+            raise
     if proc.returncode:
         raise MakeMkvRuntimeError(proc.returncode, cmd, output=os.linesep.join(buffer))
     if buffer and proc.returncode:
         logging.warning(f"Cannot parse {len(buffer)} lines: {os.linesep.join(buffer)}")
         raise MakeMkvRuntimeError(proc.returncode, cmd, output=os.linesep.join(buffer))
     logging.info("MakeMKV exits gracefully.")
+
+
+def _stop_makemkvcon(proc, timeout=10):
+    """
+    Stop a makemkvcon process that is still running.
+
+    Sends SIGTERM, waits up to `timeout` seconds, then sends SIGKILL.
+
+    Parameters:
+        proc (subprocess.Popen): the makemkvcon process
+        timeout (int): seconds to wait after SIGTERM before SIGKILL
+    """
+    if proc.poll() is not None:
+        return
+    logging.warning(f"Stopping makemkvcon (PID {proc.pid})")
+    proc.terminate()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        logging.warning(f"makemkvcon (PID {proc.pid}) ignored SIGTERM, killing it")
+        proc.kill()
+        proc.wait()
 
 
 def manual_wait(job) -> bool:

@@ -36,6 +36,15 @@ class RipperException(Exception):
     pass
 
 
+class DriveEmptyException(RipperException):
+    """
+    The drive has no disc (tray open or empty), so there is nothing to rip.
+
+    Opening or ejecting a tray also fires the udev "change" event that starts
+    ARM, so this is a normal exit, not an error.
+    """
+
+
 def notify(job, title: str, body: str):
     """
     Send notifications with apprise\n
@@ -194,15 +203,14 @@ def move_files(base_path, filename, job, is_main_feature=False):
     :param str filename: name of file to be moved\n
     :param job: instance of Job class\n
     :param bool is_main_feature: if current is main feature move to main dir
-    :return str: Full movie path
+    :return bool: False if the file could not be moved
     """
     video_title = fix_job_title(job)
     logging.debug(f"Arguments: {base_path} : {filename} : "
                   f"{job.hasnicetitle} : {video_title} : {is_main_feature}")
-    # If filename is blank skip and return
-    if filename == "":
-        logging.info(f"{filename} is empty... Skipping")
-        return None
+    if not filename or not filename.strip():
+        logging.error("Cannot move a ripped track without a filename; keeping source files")
+        return False
 
     movie_path = job.path
     logging.info(f"Moving {job.video_type} {filename} to {movie_path}")
@@ -213,14 +221,13 @@ def move_files(base_path, filename, job, is_main_feature=False):
     if is_main_feature:
         movie_file = os.path.join(movie_path, video_title + "." + job.config.DEST_EXT)
         logging.info(f"Track is the Main Title.  Moving '{os.path.join(base_path, filename)}' to {movie_file}")
-        move_files_main(os.path.join(base_path, filename), movie_file, movie_path)
+        return move_files_main(os.path.join(base_path, filename), movie_file, movie_path)
     else:
         # Don't make the extra's path unless we need it
         make_dir(extras_path)
         logging.info(f"Moving '{os.path.join(base_path, filename)}' to {extras_path}")
         # This also handles series - But it doesn't use the extras folder
-        move_files_main(os.path.join(base_path, filename), os.path.join(extras_path, filename), extras_path)
-    return movie_path
+        return move_files_main(os.path.join(base_path, filename), os.path.join(extras_path, filename), extras_path)
 
 
 def _calculate_filename_similarity(expected_base, actual_base):
@@ -256,6 +263,23 @@ def _calculate_filename_similarity(expected_base, actual_base):
     return score
 
 
+def _different_number(expected_base, actual_base):
+    """Fuzzy spelling must preserve every numeric token, regardless of padding or stem length."""
+    expected_numbers = [int(number) for number in re.findall(r"[0-9]+", expected_base)]
+    actual_numbers = [int(number) for number in re.findall(r"[0-9]+", actual_base)]
+    return expected_numbers != actual_numbers
+
+
+def _matching_file_candidates(directory, expected_ext):
+    """Return files with the requested extension; a directory entry is never a candidate."""
+    candidates = []
+    for filename in os.listdir(directory):
+        base, ext = os.path.splitext(filename)
+        if ext.lower() == expected_ext.lower() and os.path.isfile(os.path.join(directory, filename)):
+            candidates.append((filename, base))
+    return candidates
+
+
 def find_matching_file(expected_file):
     """
     Find a file that matches the expected filename, handling minor naming discrepancies.
@@ -278,15 +302,9 @@ def find_matching_file(expected_file):
 
     # Get candidate files with same extension
     try:
-        files_in_dir = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+        candidate_files = _matching_file_candidates(directory, expected_ext)
     except OSError:
         return expected_file
-
-    candidate_files = []
-    for file in files_in_dir:
-        base, ext = os.path.splitext(file)
-        if ext.lower() == expected_ext.lower():
-            candidate_files.append((file, base))
 
     if not candidate_files:
         return expected_file
@@ -296,6 +314,8 @@ def find_matching_file(expected_file):
     best_score = 0
 
     for file, base in candidate_files:
+        if _different_number(expected_base, base):
+            continue
         score = _calculate_filename_similarity(expected_base, base)
         if score > best_score:
             best_score = score
@@ -318,18 +338,22 @@ def move_files_main(old_file, new_file, base_path):
     :param str old_file: The file to be moved - must include full path
     :param str new_file: Final destination of file - must include full path
     :param str base_path: The base path of the new file - used for logging
-    :return: None
+    :return bool: True if the file was moved to new_file
     """
-    if not os.path.isfile(new_file):
+    # A directory would make shutil.move nest the source, and a broken link can be overwritten.
+    # Every existing directory entry is a collision, regardless of its target or type.
+    if not os.path.lexists(new_file):
         # Try to find the file, handling minor naming discrepancies
         actual_old_file = find_matching_file(old_file)
 
         try:
             shutil.move(actual_old_file, new_file)
+            return True
         except Exception as error:
             logging.error(f"Unable to move '{actual_old_file}' to '{base_path}' - Error: {error}")
     else:
-        logging.info(f"File: {new_file} already exists.  Not moving.")
+        logging.error(f"File: {new_file} already exists.  Not moving.")
+    return False
 
 
 def move_movie_poster(final_directory, hb_out_path):
@@ -355,12 +379,14 @@ def scan_emby():
         logging.info("Sending Emby library scan request")
         url = f"http://{cfg.arm_config['EMBY_SERVER']}:{cfg.arm_config['EMBY_PORT']}/Library/Refresh?api_key={cfg.arm_config['EMBY_API_KEY']}"  # noqa: E501
         try:
-            req = requests.post(url)
+            req = requests.post(url, timeout=30)
             if req.status_code > 299:
                 req.raise_for_status()
             logging.info("Emby Library Scan request successful")
         except requests.exceptions.HTTPError:
             logging.error(f"Emby Library Scan request failed with status code: {req.status_code}")
+        except requests.exceptions.RequestException as error:
+            logging.error(f"Emby Library Scan request failed: {type(error).__name__}")
     else:
         logging.info("EMBY_REFRESH config parameter is false.  Skipping emby scan.")
 
@@ -498,6 +524,11 @@ def rip_data(job):
         make_dir(raw_path, False)
 
     final_path = os.path.join(final_path, final_file_name)
+    full_final_file = os.path.join(final_path, f"{str(job.label)}.iso")
+    if os.path.isfile(full_final_file):
+        # A disc with the same label was ripped before - use a new folder rather than skip the move
+        final_path = f"{final_path}_{round(time.time() * 100)}"
+        full_final_file = os.path.join(final_path, f"{str(job.label)}.iso")
     incomplete_filename = os.path.join(raw_path, str(job.label) + ".part")
     make_dir(final_path)
     logging.info(f"Ripping data disc to: {incomplete_filename}")
@@ -507,9 +538,13 @@ def rip_data(job):
     logging.debug(f"Sending command: {cmd}")
     try:
         subprocess.check_output(cmd, shell=True).decode("utf-8")
-        full_final_file = os.path.join(final_path, f"{str(job.label)}.iso")
         logging.info(f"Moving data-disc from '{incomplete_filename}' to '{full_final_file}'")
-        move_files_main(incomplete_filename, full_final_file, final_path)
+        if not move_files_main(incomplete_filename, full_final_file, final_path):
+            # Don't remove raw_path below, the image there is the only copy
+            err = f"Data image could not be moved to '{full_final_file}'. It was kept at '{incomplete_filename}'"
+            logging.error(err)
+            database_updater({"status": JobState.FAILURE.value, "errors": err}, job)
+            return False
         logging.info("Data rip call successful")
         success = True
     except subprocess.CalledProcessError as dd_error:
@@ -702,6 +737,22 @@ def database_adder(obj_class):
     return False
 
 
+def job_process_running(job):
+    """
+    Check whether the process that started a job is still alive\n
+    A PID that now belongs to another process (different hash) counts as gone,
+    which is common after a container restart.
+    :param job: Job to check
+    :return: True if the job's own process is still running
+    """
+    if not job.pid or not psutil.pid_exists(job.pid):
+        return False
+    try:
+        return hash(psutil.Process(job.pid)) == job.pid_hash
+    except psutil.NoSuchProcess:
+        return False
+
+
 def clean_old_jobs():
     """
     Check for running jobs - Update failed jobs that are no longer running\n
@@ -710,12 +761,10 @@ def clean_old_jobs():
     active_jobs = db.session.query(Job).filter(Job.status.notin_(['fail', 'success'])).all()
     # Clean up abandoned jobs
     for job in active_jobs:
-        if psutil.pid_exists(job.pid):
-            job_process = psutil.Process(job.pid)
-            if job.pid_hash == hash(job_process):
-                logging.info(f"Job #{job.job_id} with PID {job.pid} is currently running.")
+        if job_process_running(job):
+            logging.info(f"Job #{job.job_id} with PID {job.pid} is currently running.")
         else:
-            logging.info(f"Job #{job.job_id} with PID {job.pid} has been abandoned."
+            logging.info(f"Job #{job.job_id} with PID {job.pid} has been abandoned. "
                          f"Updating job status to fail.")
             job.status = JobState.FAILURE.value
             db.session.commit()
@@ -781,6 +830,15 @@ def duplicate_run_check(dev_path):
     if drive is None or not drive.processing:
         return  # unknown or idle drive is safe to start another run.
     job = drive.job_current
+    if job.finished or not job_process_running(job):
+        # A crashed, killed or finished job must not hold the drive forever
+        logging.warning(f"Drive {dev_path} is held by Job ({job.job_id}) with status '{job.status}', "
+                        f"which is finished or no longer running (PID {job.pid}). Releasing the drive.")
+        if not job.finished:
+            job.status = JobState.FAILURE.value
+        drive.release_current_job()
+        db.session.commit()
+        return
     logging.critical(f'Drive {dev_path} has an active Job ({job.job_id}): {job.status}.')
     # log time
     job_time = ceil(job.run_time // 60)
@@ -853,11 +911,17 @@ def job_dupe_check(job):
         results = {}
         i = 0
         for j in previous_rips:
+            # A generic label (DVD_VIDEO, "not identified") is shared by different discs. Only the
+            # same DVD fingerprint is this disc: a different one, or an earlier rip without one,
+            # must not lend it its identity.
+            if job.crc_id and j.crc_id != job.crc_id:
+                continue
             # logging.debug(f"job obj= {j.get_d()}")
             job_dict = j.get_d().items()
             results[i] = {}
             for key, value in iter(job_dict):
-                results[i][str(key)] = str(value)
+                # get_d() stringifies None; never store the literal "None" as a title/year/poster
+                results[i][str(key)] = "" if value in (None, "None") else str(value)
             i += 1
 
     # logging.debug(f"previous rips = {results}")
@@ -870,7 +934,7 @@ def job_dupe_check(job):
             year = results[0]['year'] if results[0]['year'] != "" else ""
             poster_url = results[0]['poster_url'] if results[0]['poster_url'] != "" else None
             hasnicetitle = (str(results[0]['hasnicetitle']).lower() == 'true')
-            video_type = results[0]['video_type'] if results[0]['hasnicetitle'] != "" else "unknown"
+            video_type = results[0]['video_type'] or "unknown"
             active_rip = {
                 "title": title, "year": year, "poster_url": poster_url, "hasnicetitle": hasnicetitle,
                 "video_type": video_type}
@@ -882,6 +946,39 @@ def job_dupe_check(job):
     else:
         logging.info("We have no previous rips/jobs matching this label")
         return False
+
+
+MANUAL_FIELDS = ("title", "year", "video_type", "imdb_id", "poster_url")
+
+
+def apply_manual_overrides(job):
+    """
+    Re-apply values set in the UI (title_manual, year_manual, ...) over the
+    automatic identification.
+
+    The UI writes both <field> and <field>_manual. If that happens while the
+    disc is still being identified, identify.py and job_dupe_check() then
+    overwrite <field>, and only the title survived (fix_job_title() reads
+    title_manual). Only the *_manual columns are read from the database, so
+    uncommitted changes on ``job`` are kept.
+
+    :param job: Current job
+    :return: True if any value was re-applied
+    """
+    columns = [getattr(Job, f"{field}_manual") for field in MANUAL_FIELDS]
+    row = db.session.query(*columns).filter(Job.job_id == job.job_id).one_or_none()
+    if row is None:
+        return False
+    updates = {}
+    for field, manual in zip(MANUAL_FIELDS, row):
+        if manual not in (None, "", "None") and getattr(job, field) != manual:
+            updates[field] = manual
+            updates[f"{field}_manual"] = manual
+    if updates:
+        logging.info("Re-applying values set in the UI: "
+                     + ", ".join(f"{key}={value}" for key, value in updates.items() if not key.endswith("_manual")))
+        database_updater(updates, job)
+    return bool(updates)
 
 
 def check_for_wait(job):
@@ -901,6 +998,7 @@ def check_for_wait(job):
             db.session.refresh(job)
             if job.title_manual:
                 logging.info("Manual override found.  Overriding auto identification values.")
+                apply_manual_overrides(job)
                 job.updated = True
                 job.hasnicetitle = True
                 database_updater({"hasnicetitle": True, "updated": True}, job)

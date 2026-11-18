@@ -59,8 +59,15 @@ def rip_visual_media(have_dupes, job, logfile, protection):
         db.session.commit()
         try:
             makemkv_out_path = makemkv.makemkv(job)
-        except Exception as mkv_error:  # noqa: E722
-            raise utils.RipperException("Error while running MakeMKV") from mkv_error
+        except (makemkv.MakeMkvRuntimeError, makemkv.UpdateKeyRunTimeError, utils.RipperException) as mkv_error:
+            # Keep the reason: main.py only logs this exception's message (it
+            # prints the chained traceback at DEBUG level only), and it is
+            # what job.errors and the failure notification show.
+            raise utils.RipperException(f"Error while running MakeMKV: {mkv_error}") from mkv_error
+        except Exception as mkv_error:
+            logging.exception("Unexpected error while running MakeMKV")
+            raise utils.RipperException(
+                f"Error while running MakeMKV: {type(mkv_error).__name__}: {mkv_error}") from mkv_error
 
         if job.config.NOTIFY_RIP:
             utils.notify(job, constants.NOTIFY_TITLE, f"{job.title} rip complete. Starting transcode. ")
@@ -79,22 +86,29 @@ def rip_visual_media(have_dupes, job, logfile, protection):
 
     # Update final path if user has set a custom/manual title
     logging.debug(f"Job title status: [{job.title_manual}]")
-    if job.title_manual:
+    if job.title_manual and utils.fix_job_title(job) != job_title:
         # Remove the old final dir
         utils.delete_raw_files([final_directory])
         job_title = utils.fix_job_title(job)
         final_directory = os.path.join(job.config.COMPLETED_PATH, type_sub_folder, job_title)
+        # The new folder may already exist (e.g. another disc of the same series) - make a new one like
+        # at the start. The disc is already ripped, so don't apply the duplicate rip setting here
+        final_directory = utils.check_for_dupe_folder(False, final_directory, job)
         # Update the job.path with the final directory
         utils.database_updater({'path': final_directory}, job)
 
     # Move to final folder
-    move_files_post(transcode_out_path, job)
+    all_moved = move_files_post(transcode_out_path, job)
     # Movie the movie poster if we have one - no longer needed, now handled by save_movie_poster
     utils.move_movie_poster(final_directory, transcode_out_path)
     # Scan Emby if arm.yaml requires it
     utils.scan_emby()
     # Set permissions if arm.yaml requires it
     utils.set_permissions(final_directory)
+    if not all_moved:
+        # Don't delete the raw/transcode files, they may be the only copy of what wasn't moved
+        raise utils.RipperException(f"Some files could not be moved to '{final_directory}'. "
+                                    f"They were kept in '{transcode_out_path}'")
     # If set in the arm.yaml remove the raw files
     utils.delete_raw_files([transcode_in_path, transcode_out_path, makemkv_out_path])
     # report errors if any
@@ -176,7 +190,7 @@ def notify_exit(job):
     """
     if job.config.NOTIFY_TRANSCODE:
         if job.errors:
-            errlist = ', '.join(job.errors)
+            errlist = job.errors
             utils.notify(job, constants.NOTIFY_TITLE,
                          f" {job.title} processing completed with errors. "
                          f"Title(s) {errlist} failed to complete. ")
@@ -192,23 +206,28 @@ def move_files_post(transcode_out_path, job):
     if movie check what source we got them from, for MakeMKV use skip_transcode_movie, so we can check filesize\n
     :param transcode_out_path: This should either be the RAW_PATH from MakeMKV, /dev/srX or TRANSCODE_PATH
     :param job: current job
-    :return: None
+    :return bool: True only when at least one ripped track exists and every required move succeeds
     """
-    tracks = job.tracks.filter_by(ripped=True)  # .order_by(job.tracks.length.desc())
+    all_moved = True
+    tracks = list(job.tracks.filter_by(ripped=True))
+    if not tracks or any(not track.filename or not track.filename.strip() for track in tracks):
+        logging.error("No complete set of ripped filenames is available; keeping source files")
+        return False
     if job.video_type == "series":
         for track in tracks:
-            utils.move_files(transcode_out_path, track.filename, job, False)
+            all_moved &= utils.move_files(transcode_out_path, track.filename, job, False)
     else:
         for track in tracks:
-            if tracks.count() == 1:
-                utils.move_files(transcode_out_path, track.filename, job, True)
+            if len(tracks) == 1:
+                all_moved &= utils.move_files(transcode_out_path, track.filename, job, True)
             else:
                 # If source is MakeMKV we know the mainfeature will be wrong let skip_transcode_movie handle it
                 if track.source == "MakeMKV":
-                    skip_transcode_movie(os.listdir(transcode_out_path), job, transcode_out_path)
+                    all_moved &= skip_transcode_movie(os.listdir(transcode_out_path), job, transcode_out_path)
                     break
                 # If HandBrake was used we can pass track.main_feature
-                utils.move_files(transcode_out_path, track.filename, job, track.main_feature)
+                all_moved &= utils.move_files(transcode_out_path, track.filename, job, track.main_feature)
+    return all_moved
 
 
 def rip_with_mkv(current_job, protection=0):
@@ -245,7 +264,7 @@ def skip_transcode_movie(files, job, raw_path):
     :param files: os.listdir(RAW_PATH)
     :param job: Current job
     :param raw_path: RAW_PATH of ripped mkv files (mkvoutpath)
-    :return: None
+    :return bool: False if any file could not be moved
     """
     logging.debug(f"Videotype: {job.video_type}")
     # if video_type is movie, then move the biggest title to media_dir
@@ -258,12 +277,13 @@ def skip_transcode_movie(files, job, raw_path):
     temp_path = os.path.join(raw_path, largest_file_name)
     if os.stat(temp_path).st_size <= 1:  # sanity check for filesize
         logging.info(f"{raw_path} is empty or very small size. - Folder size: {os.stat(temp_path).st_size}")
+    all_moved = True
     for file in files:
         # move main into main folder
         # move others into extras folder
         if file == largest_file_name:
             # largest movie
-            utils.move_files(raw_path, file, job, True)
+            all_moved &= utils.move_files(raw_path, file, job, True)
         else:
             # If mainfeature is enabled - skip to the next file
             if job.config.MAINFEATURE:
@@ -271,6 +291,7 @@ def skip_transcode_movie(files, job, raw_path):
                 continue
             # Other/extras
             if str(job.config.EXTRAS_SUB).lower() != "none":
-                utils.move_files(raw_path, file, job, False)
+                all_moved &= utils.move_files(raw_path, file, job, False)
             else:
                 logging.info(f"Not moving extra: \"{file}\" - Sub folder is not set or named incorrectly")
+    return all_moved

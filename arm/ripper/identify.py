@@ -8,6 +8,7 @@ import re
 import datetime
 import unicodedata
 import json
+import subprocess
 from ast import literal_eval
 from typing import Optional
 
@@ -142,13 +143,13 @@ def identify_bluray(job):
                       f"number is: {error.errno}")
         # Maybe call OMdb with label when we can't find any ident on disc ?
         # Attempt to parse label
-        if str(job.label) == "":
-            job.title = str(job.label)
+        if str(job.label or "") == "":
+            job.title = str(job.label or "")
             job.year = ""
             db.session.commit()
             return False
         else:
-            bluray_title = str(job.label)
+            bluray_title = str(job.label or "")
             bluray_title = bluray_title.replace('_', ' ')
             bluray_title = bluray_title.title()
             job.title = job.title_auto = bluray_title
@@ -157,14 +158,14 @@ def identify_bluray(job):
             return True
 
     if doc is None:
-        bluray_title = str(job.label)
+        bluray_title = str(job.label or "")
     else:
         try:
             bluray_title = doc['disclib']['di:discinfo']['di:title']['di:name']
             if not bluray_title:
-                bluray_title = str(job.label)
-        except KeyError:
-            bluray_title = str(job.label)
+                bluray_title = str(job.label or "")
+        except (KeyError, TypeError):  # missing element, or an empty one (None)
+            bluray_title = str(job.label or "")
             logging.error(
                 "Could not parse title from bdmt_eng.xml file. "
                 "Using disc label '%s'.",
@@ -206,7 +207,7 @@ def identify_dvd(job):
         job.crc_id = str(crc64)
         urlstring = f"https://1337server.pythonanywhere.com/api/v1/?mode=s&crc64={crc64}"
         logging.debug(urlstring)
-        dvd_info_xml = urllib.request.urlopen(urlstring).read()
+        dvd_info_xml = urllib.request.urlopen(urlstring, timeout=30).read()
         arm_api_json = json.loads(dvd_info_xml)
         logging.debug(f"dvd xml - {arm_api_json}")
         logging.debug(f"results = {arm_api_json['results']}")
@@ -256,21 +257,42 @@ def identify_dvd(job):
         job.year = None
 
     # Track 99 detection
-    # -Oy means output a python dict
-    output = arm_subprocess(["lsdvd", "-Oy", job.devpath])
-    if output:
-        try:
-            # literal_eval only accepts literals so we have to adjust the output slightly
-            tracks = literal_eval(re.sub(r"^.*\{", "{", output)).get("track", [])
-            logging.debug(f"Detected {len(tracks)} tracks")
-            if len(tracks) == 99:
-                job.has_track_99 = True
-                if cfg.arm_config["PREVENT_99"]:
-                    raise utils.RipperException("Track 99 found and PREVENT_99 is enabled")
-        except (SyntaxError, AttributeError) as e:
-            logging.error("Failed to parse lsdvd output", exc_info=e)
+    tracks = lsdvd_tracks(job.devpath)
+    if tracks is not None:
+        logging.debug(f"Detected {len(tracks)} tracks")
+        if len(tracks) == 99:
+            job.has_track_99 = True
+            if cfg.arm_config["PREVENT_99"]:
+                raise utils.RipperException("Track 99 found and PREVENT_99 is enabled")
 
     return True
+
+
+def lsdvd_tracks(devpath):
+    """
+    List the DVD's titles with ``lsdvd -Oy`` (output as a python dict).
+
+    Only stdout is parsed. libdvdread writes warnings to stderr, such as
+    "libdvdread: CHECK_VALUE failed in src/ifo_read.c:1272 ...", and mixing
+    them into the output made the dict unparseable.
+
+    :return: list of title dicts, or ``None`` if lsdvd failed or its output
+             couldn't be parsed
+    """
+    try:
+        proc = subprocess.run(["lsdvd", "-Oy", devpath], capture_output=True,
+                              text=True, errors="replace", timeout=300)
+    except (OSError, subprocess.SubprocessError) as error:
+        logging.error(f"Failed to run lsdvd: {error}")
+        return None
+    if proc.stderr.strip():
+        logging.debug(f"lsdvd stderr: {proc.stderr.strip()}")
+    try:
+        # literal_eval only accepts literals, so drop the "lsdvd = " before the dict
+        return literal_eval(re.sub(r"^.*?\{", "{", proc.stdout, count=1, flags=re.DOTALL)).get("track", [])
+    except (SyntaxError, ValueError, AttributeError) as error:
+        logging.error(f"Failed to parse lsdvd output (exit code {proc.returncode})", exc_info=error)
+        return None
 
 
 def get_video_details(job):
