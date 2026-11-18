@@ -2363,6 +2363,32 @@ def test_rip_start_uses_pending_session_rip_preset() -> None:
     assert r.json()["rip_preset_id"] == "rpr_session"
 
 
+def test_rip_start_uses_a_session_parked_before_the_rip() -> None:
+    """ "Apply session" in the review card before Start parks the application;
+    the rip must already use that session's rip preset (e.g. main feature),
+    not the disc-type archive default that rips every title."""
+    db = FakeSession()
+    db.rows["config"] = [_config()]
+    db.rows["drives"] = [_drive()]
+    db.rows["jobs"] = [_job(status=JobStatus.IDENTIFIED, meta={"scan_result": _scan_dict()})]
+    db.rows["tracks"] = []
+    db.rows["sessions"] = [_session_row()]
+    db.rows["session_applications"] = [
+        SessionApplication(
+            id="sap_parked",
+            session_id="ses_r",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000001",
+            status=SessionApplicationStatus.WAITING_IDENTIFY,
+        )
+    ]
+    db.rows["rip_presets"] = [_movie_preset(), _movie_preset("rpr_session")]
+    new = [_track("trk_new", status=TrackStatus.QUEUED)]
+    with TestClient(_make_app(db)) as client, _patch_select_tracks(new):
+        r = client.post("/api/ripper/jobs/job_01JZXR7K3M5Q8N4VWA00000001/rip-start", headers=_OWNER_HEADERS)
+    assert r.status_code == 200, r.text
+    assert r.json()["rip_preset_id"] == "rpr_session"
+
+
 def test_rip_start_resolves_routed_session_exactly_once() -> None:
     """Fix 75-8 regression: rip-start must resolve the routed session ONE
     time per request (preset choice + min-length override both derive from
