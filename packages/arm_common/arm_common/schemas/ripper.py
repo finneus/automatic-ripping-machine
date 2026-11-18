@@ -167,3 +167,8 @@ class RipperConfigView(BaseModel):
     # Defaulted so older backends omitting them still validate (no hold, 60s).
     ripping_paused: bool = False
     manual_wait_seconds: int = 60
+    # This drive's `prescan_timeout` override: how long one `makemkvcon info`
+    # scan may run before it is killed. `None` => the ripper's built-in
+    # default (`SCAN_TIMEOUT_SECONDS`). UHD discs with many playlists can
+    # take ~4 min on a LibreDrive, close to that default.
+    scan_timeout_seconds: int | None = None

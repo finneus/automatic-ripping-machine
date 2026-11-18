@@ -93,6 +93,7 @@ class FakeClient:
         self.community_keydb_enabled: bool = True
         self.ripping_paused: bool = False
         self.manual_wait_seconds: int = 60
+        self.scan_timeout_seconds: int | None = None
         self.keydb_reports: list = []
         self.sdf_reports: list = []
         self.makemkv_sdf_enabled: bool = True
@@ -149,6 +150,7 @@ class FakeClient:
             ripping_paused=self.ripping_paused,
             manual_wait_seconds=self.manual_wait_seconds,
             makemkv_sdf_enabled=self.makemkv_sdf_enabled,
+            scan_timeout_seconds=self.scan_timeout_seconds,
         )
 
     async def report_keydb_status(self, *, state, vuk_count=None, age_days=None) -> None:
@@ -910,8 +912,9 @@ async def test_manual_trigger_runs_even_when_auto_rip_disabled(stub_scan, stub_e
 
     # The manual path bypasses the auto_rip gate (user already opted in) but
     # still does config lookups inside the pipeline: one for the MakeMKV key,
-    # one for the community-keydb toggle, and one for the SDF toggle.
-    assert client.get_ripper_config_calls == 3
+    # one for the community-keydb toggle, one for the SDF toggle, and one for
+    # the drive's scan-timeout override.
+    assert client.get_ripper_config_calls == 4
     assert client.identify_pending_session_ids == ["sess_test"]
     assert client.rip_start_calls == ["job_test"]
     assert client.rip_complete_calls == ["job_test"]
@@ -1882,3 +1885,47 @@ async def test_auto_rip_lookup_failure_proceeds_fail_open(caplog, stub_scan, stu
     assert "auto-rip config lookup failed (down); proceeding fail-open" in warnings
     assert client.rip_start_calls == ["job_test"]
     assert client.rip_complete_calls == ["job_test"]
+
+
+def _recording_scan(monkeypatch, seen: list[float]) -> None:
+    """Stub the scan so it records the timeout it would run under."""
+    from arm_ripper.scan.makemkv import current_scan_timeout
+
+    async def _scan(_device_path: str) -> ScanResult:
+        seen.append(current_scan_timeout())
+        return ScanResult(
+            disc_type=DiscType.DVD, volume_label="TEST", titles=[ScanTitle(index=0, duration_seconds=3600)]
+        )
+
+    monkeypatch.setattr(disc_scan_module, "scan_disc", _scan)
+
+
+async def test_scan_runs_under_the_drive_scan_timeout_override(monkeypatch, stub_eject):
+    from arm_ripper.scan.makemkv import SCAN_TIMEOUT_SECONDS, current_scan_timeout
+
+    seen: list[float] = []
+    _recording_scan(monkeypatch, seen)
+    client = FakeClient()
+    client.scan_timeout_seconds = 600
+    client.identify_responses.append(_job(JobStatus.IDENTIFIED, title="UHD"))
+    controller = JobController(client, "drv_test")
+
+    await asyncio.wait_for(controller.handle_disc_inserted("/dev/sr0"), timeout=2.0)
+
+    assert seen == [600.0]
+    assert current_scan_timeout() == SCAN_TIMEOUT_SECONDS
+
+
+async def test_scan_timeout_falls_back_to_the_default_when_the_config_is_unreachable(monkeypatch, stub_eject):
+    from arm_ripper.scan.makemkv import SCAN_TIMEOUT_SECONDS
+
+    seen: list[float] = []
+    _recording_scan(monkeypatch, seen)
+    client = FakeClient()
+    client.get_ripper_config_error = httpx.ConnectError("backend down")
+    client.identify_responses.append(_job(JobStatus.IDENTIFIED, title="UHD"))
+    controller = JobController(client, "drv_test")
+
+    await asyncio.wait_for(controller.handle_disc_inserted("/dev/sr0"), timeout=2.0)
+
+    assert seen == [SCAN_TIMEOUT_SECONDS]

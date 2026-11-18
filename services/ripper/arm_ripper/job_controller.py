@@ -20,6 +20,7 @@ from arm_ripper.ripper_config import ripper_config_or_none
 from arm_ripper.resolution_wait import IDENTIFY_WAIT, RESOLUTION_TIMEOUT_UNSET, REVIEW_WAIT, ResolutionWaiter, WaitSpec
 from arm_ripper.rip.dispatcher import DEFAULT_MIN_LENGTH_SECONDS
 from arm_ripper.disc_scan import scan_or_none
+from arm_ripper.scan.makemkv import scan_timeout
 from arm_ripper.drive_poll import DriveState, read_drive_status
 from arm_ripper.source import is_file_source
 from arm_ripper.ws_client import WSClient
@@ -291,6 +292,11 @@ class JobController:
         cfg = await ripper_config_or_none(self._client, "auto-rip config lookup", "proceeding fail-open")
         return cfg is None or cfg.auto_rip_on_insert
 
+    async def _scan_timeout_seconds(self) -> int | None:
+        """This drive's scan-timeout override, or None (the built-in default) when unset or the config can't be read."""
+        cfg = await ripper_config_or_none(self._client, "scan-timeout config lookup", "using the default scan timeout")
+        return None if cfg is None else cfg.scan_timeout_seconds
+
     async def _run_pipeline(self, device_path: str, *, pending_session_id: str | None) -> None:
         async with self._claim(None):
             # Refresh the MakeMKV key before makemkvcon first touches
@@ -298,7 +304,8 @@ class JobController:
             # container up across a beta-key rotation doesn't scan/rip
             # protected discs with a stale key.
             await self._makemkv.prepare()
-            scan_result = await scan_or_none(device_path)
+            with scan_timeout(await self._scan_timeout_seconds()):
+                scan_result = await scan_or_none(device_path)
             if scan_result is None:
                 return
 

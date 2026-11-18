@@ -4235,6 +4235,10 @@ export type RipperConfigView = {
      * Manual Wait Seconds
      */
     manual_wait_seconds?: number;
+    /**
+     * Scan Timeout Seconds
+     */
+    scan_timeout_seconds?: number | null;
 };
 
 /**
