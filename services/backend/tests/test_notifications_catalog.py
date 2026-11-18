@@ -131,3 +131,74 @@ def test_catalog_skips_plugin_that_raises(monkeypatch) -> None:
     _patch(monkeypatch, [bad, good])
     c = cat.build_catalog()
     assert [s["id"] for s in c["services"]] == ["good"]
+
+
+_TARGETS_TOKENS = {
+    "bot_token": {"name": "Bot Token", "type": "string", "required": True, "private": True},
+    "targets": {"name": "Target Chat ID", "type": "list:string"},
+}
+
+
+def test_catalog_offers_recipients_as_a_to_field(monkeypatch) -> None:
+    p = _FakePlugin(
+        scheme="tgram",
+        name="Telegram",
+        tokens=_TARGETS_TOKENS,
+        args={"format": {"name": "Format", "type": "string"}, "to": {"alias_of": "targets"}},
+    )
+    _patch(monkeypatch, [p])
+    adv = cat.build_catalog()["services"][0]["advanced_fields"]
+    assert adv[0] == {
+        "key": "to",
+        "label": "Target Chat ID (comma-separated)",
+        "type": "string",
+        "private": False,
+        "required": False,
+    }
+    assert [f["key"] for f in adv] == ["to", "format"]
+
+
+def test_targets_field_defaults_the_label_when_the_token_has_no_name() -> None:
+    p = _FakePlugin(scheme="x", name="X", tokens={"targets": {}}, args={"to": {"alias_of": "targets"}})
+    assert cat._targets_field(p)["label"] == "Targets (comma-separated)"
+
+
+def test_targets_field_is_none_without_a_to_alias() -> None:
+    assert cat._targets_field(_FakePlugin(scheme="x", name="X", tokens=_TARGETS_TOKENS)) is None
+
+
+def test_targets_field_is_none_when_to_aliases_something_else() -> None:
+    p = _FakePlugin(scheme="x", name="X", tokens=_TARGETS_TOKENS, args={"to": {"alias_of": "user"}})
+    assert cat._targets_field(p) is None
+
+
+def test_targets_field_is_none_without_a_targets_token() -> None:
+    p = _FakePlugin(scheme="x", name="X", args={"to": {"alias_of": "targets"}})
+    assert cat._targets_field(p) is None
+
+
+def test_targets_field_handles_plugins_without_templates() -> None:
+    p = _FakePlugin(scheme="x", name="X")
+    p.template_args = None
+    p.template_tokens = None
+    assert cat._targets_field(p) is None
+
+
+def test_real_telegram_channel_composes_a_url_apprise_sends_to_the_chat() -> None:
+    """End to end against the installed apprise: the catalog's Telegram form, filled in, composes a URL whose chat id
+    apprise picks up (no network: `add` only parses)."""
+    import apprise
+
+    from arm_backend.notifications.field_map import compose_url_from_fields
+
+    cat.build_catalog.cache_clear()
+    try:
+        tgram = next(s for s in cat.build_catalog()["services"] if s["id"] == "tgram")
+        assert "to" in [f["key"] for f in tgram["advanced_fields"]]
+        url = compose_url_from_fields("tgram", {"bot_token": "123456789:" + "A" * 35, "to": "-1001234,987"})
+    finally:
+        cat.build_catalog.cache_clear()
+    assert url is not None and url.endswith("?to=-1001234%2C987")
+    sender = apprise.Apprise()
+    assert sender.add(url)
+    assert [chat for chat, _topic in sender[0].targets] == [-1001234, 987]
