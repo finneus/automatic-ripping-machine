@@ -19,7 +19,8 @@ import arm.config.config as cfg
 from arm.models import Job
 
 from arm.ripper import utils
-from arm.ripper.title_match import rank_results
+from arm.ripper.title_match import (rank_results, normalize_title, label_search_title, count_words,
+                                    min_words_after_shortening)
 from arm.ripper.ProcessHandler import arm_subprocess
 from arm.ui import db
 
@@ -325,6 +326,17 @@ def get_video_details(job):
     except Exception as error:
         logging.info(f"Identification failed with the error: {error}. Continuing...")
 
+    # The disc title found nothing that matches: the volume label often names the film better
+    # (Blu-ray DARK_KNIGHT_RISES whose disc title only starts with "Dark Knight").
+    if not job.hasnicetitle:
+        label_title = label_search_title(job.label)
+        if label_title and normalize_title(label_title) != normalize_title(title):
+            logging.info(f"Nothing matched {title!r}, searching for the disc label {label_title!r}")
+            try:
+                identify_loop(job, None, label_title, year)
+            except Exception as error:
+                logging.info(f"Identification by label failed with the error: {error}. Continuing...")
+
 
 def update_job(job, search_results):
     """
@@ -438,14 +450,17 @@ def identify_loop(job, response, title, year):
         response = try_without_year(job, response, title)
 
         if response is None:
-            while response is None and title.find("-") > 0:
+            # Shorten word by word, but keep at least half of the words (never fewer than two):
+            # "Dark-Knight" shortened to "Dark" matched the series "Dark" exactly.
+            min_words = min_words_after_shortening(count_words(title))
+            while response is None and title.find("-") > 0 and count_words(title.rsplit('-', 1)[0]) >= min_words:
                 title = title.rsplit('-', 1)[0]
                 logging.debug(f"Trying title: {title}")
                 response = metadata_selector(job, title, year)
                 logging.debug(f"response: {response}")
 
             # if still fail, then try slicing off the last word in a loop
-            while response is None and title.count('+') > 0:
+            while response is None and title.count('+') > 0 and count_words(title.rsplit('+', 1)[0]) >= min_words:
                 title = title.rsplit('+', 1)[0]
                 logging.debug(f"Trying title: {title}")
                 response = metadata_selector(job, title, year)

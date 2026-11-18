@@ -70,3 +70,39 @@ def rank_results(results, query, allow_continuation=True):
     scored = [entry for entry in scored if entry[0] > 0]
     scored.sort(key=lambda entry: (-entry[0], entry[1]))
     return [item for _, _, item in scored]
+
+
+# Volume label words that describe the disc, not the film: DISC1, DISC, D1, CD2, SIDE1, BD, BLURAY, UHD, 4K, WS, FS ...
+_LABEL_NOISE = re.compile(r"^(?:(?:disc|disk)\d*|(?:d|cd|side)\d+|bd|bluray|uhd|4k|ws|fs|widescreen|fullscreen)$")
+
+
+def label_search_title(label):
+    """Turn a volume label into a search query: DARK_KNIGHT_RISES_D1 -> "Dark+Knight+Rises".
+
+    :return: the query, or "" for no label or the "not identified" placeholder
+    """
+    if normalize_title(label) in ("", "not identified"):
+        return ""
+    kept = []
+    after_disc_marker = False
+    for word in (word for word in re.split(r"[^A-Za-z0-9]+", str(label)) if word):
+        if _LABEL_NOISE.match(word.lower()) or (after_disc_marker and word.isdigit()):
+            # "DISC_3": the number belongs to the marker; a number elsewhere ("300") stays
+            after_disc_marker = word.lower() in ("disc", "disk")
+            continue
+        after_disc_marker = False
+        kept.append(word)
+    return "+".join(word.capitalize() for word in kept)
+
+
+def count_words(query):
+    """Number of words in a search query, whatever separates them (space, +, -, _)."""
+    return len([word for word in re.split(r"[\s+_-]+", str(query or "")) if word])
+
+
+def min_words_after_shortening(word_count):
+    """How many words a shortened query must keep: half of the original, never fewer than two.
+
+    Shortening "Dark-Knight" to "Dark" finds the series "Dark" - one word matches far too much.
+    """
+    return max(2, (word_count + 1) // 2)
