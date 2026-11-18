@@ -21,7 +21,7 @@ from time import sleep, time
 
 import arm.config.config as cfg
 from arm.models import SystemDrives, Track
-from arm.models.job import JobState
+from arm.models.job import Job, JobState
 from arm.ripper import utils
 from arm.ripper.utils import notify
 from arm.ui import db
@@ -552,6 +552,26 @@ def parse_line(line):
     return msg_type, message
 
 
+def other_jobs_may_need_makemkv(job):
+    """
+    Whether another job could still want a MakeMKV info slot.
+
+    The penalty after ``makemkv info`` exists so that a job waiting for a slot
+    gets it before this job starts ripping. Without such a job it only delays
+    every rip. Jobs that are being set up, wait for the manual override or for a
+    slot ("active", "waiting") or read their disc ("info") count as waiting.
+
+    :param job: the job that just finished ``makemkv info``
+    :return: True if the penalty should be applied
+    """
+    pending = (JobState.IDLE.value, JobState.VIDEO_WAITING.value, JobState.VIDEO_INFO.value)
+    try:
+        return Job.query.filter(Job.status.in_(pending), Job.job_id != job.job_id).count() > 0
+    except Exception as error:  # when unsure, keep the old behaviour
+        logging.warning(f"Could not check for waiting jobs, applying the penalty: {error}")
+        return True
+
+
 def makemkv_info(job, select=None, index=9999, options=None):
     """
     Use MakeMKV info to search the system for optical drives
@@ -614,10 +634,13 @@ def makemkv_info(job, select=None, index=9999, options=None):
         job.status = JobState.VIDEO_WAITING.value
         db.session.commit()
         if max_processes:
-            logging.info(f"Penalty {wait_time}s")
-            # makemkvcon info tends to crash makemkvcon backup|mkv
-            # give other processes time to use this function.
-            sleep(wait_time)
+            if other_jobs_may_need_makemkv(job):
+                logging.info(f"Penalty {wait_time}s")
+                # makemkvcon info tends to crash makemkvcon backup|mkv
+                # give other processes time to use this function.
+                sleep(wait_time)
+            else:
+                logging.info("No other job is waiting for MakeMKV, skipping the penalty.")
         # sleep here until all processes finish (hopefully)
         utils.sleep_check_process("makemkvcon", max_processes, sleep=wait_time)
         job.status = JobState.VIDEO_RIPPING.value
