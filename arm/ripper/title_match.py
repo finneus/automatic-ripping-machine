@@ -106,3 +106,30 @@ def min_words_after_shortening(word_count):
     Shortening "Dark-Knight" to "Dark" finds the series "Dark" - one word matches far too much.
     """
     return max(2, (word_count + 1) // 2)
+
+
+def first_year(value):
+    """First four-digit year of a provider year field ("2017", "2017-2020", "2024-"), or None."""
+    match = re.match(r"\s*(\d{4})", str(value or ""))
+    return int(match.group(1)) if match else None
+
+
+def pick_by_disc_year(results, query, disc_year):
+    """Choose a result of a search WITHOUT year, using the Blu-ray disc year only as a hint.
+
+    The disc year is the date of the disc's bdmt_eng.xml: the year the disc was made, not the
+    film's year. A reissue of Heat (1995) has 2017, a remake disc of RoboCop has 2014.
+    - only results whose title is identical to the query
+    - nothing newer than the disc (a film is never younger than its disc)
+    - a film from the disc's year or the year before wins (new release or remake on a fresh disc)
+    - otherwise the provider's first one, which is the best known (Heat 1995, not Heat 2017)
+
+    :return: the chosen result, or None if no result has exactly this title
+    """
+    exact = [item for item in results or [] if title_score(query, item.get("Title", "")) == 3]
+    exact = [item for item in exact
+             if first_year(item.get("Year")) is None or first_year(item.get("Year")) <= disc_year]
+    for item in exact:
+        if first_year(item.get("Year")) in (disc_year, disc_year - 1):
+            return item
+    return exact[0] if exact else None
