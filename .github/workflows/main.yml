@@ -85,5 +85,7 @@ jobs:
         sudo mkdir -p /opt/arm/arm /opt/arm/setup
         sudo cp -r arm/migrations /opt/arm/arm
         cp setup/arm.yaml /opt/arm/setup/arm.yaml
+    - name: Run unit tests
+      run: python -m pytest test -q
     - name: Run A.R.M ui
       run: timeout 1 python ./arm/runui.py || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
