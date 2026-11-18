@@ -177,7 +177,7 @@ Session Applications are the runtime record of "apply this session to this job";
                           └─────────┘        └─────────────┘      └─────────┘
 ```
 
-`waiting_identify` is the durable "this session application is parked until there is something to fan out" state: until the disc is identified, and until the rip has persisted its Track rows (the ripper writes them at rip-start, so a session applied or resolved before that has no tracks yet). Resolve and rip-complete both drain parked applications; whichever runs once tracks exist promotes them to `queued`. See [§ Unidentified and placeholder rips](#unidentified-and-placeholder-rips) for the transitions around it.
+`waiting_identify` is the durable "this session application is parked until there is something to fan out" state: until the disc is identified, and until the rip has persisted its Track rows (the ripper writes them at rip-start, so a session applied or resolved before that has no tracks yet). Resolve and rip-complete both drain parked applications; whichever runs once tracks exist promotes them to `queued`. A session applied while the disc is ripping parks the same way (the tracks exist but are not ripped yet) and rip-complete fans it out; the apply holds the job row `FOR UPDATE`, so rip-complete cannot drain between that apply's status check and its parked row. See [§ Unidentified and placeholder rips](#unidentified-and-placeholder-rips) for the transitions around it.
 
 ### Transcode task state machine
 

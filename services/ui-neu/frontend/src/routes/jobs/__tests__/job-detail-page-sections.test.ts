@@ -399,7 +399,7 @@ describe('header', () => {
 	});
 
 	it('hides Apply session and Identify when the job cannot be applied or resolved', async () => {
-		loadJobPage(detailOf({ status: 'ripping' }));
+		loadJobPage(detailOf({ status: 'created' }));
 		await heading('Test Movie');
 		expect(screen.queryByTestId('apply-open')).not.toBeInTheDocument();
 		expect(screen.queryByTestId('identify-open')).not.toBeInTheDocument();
