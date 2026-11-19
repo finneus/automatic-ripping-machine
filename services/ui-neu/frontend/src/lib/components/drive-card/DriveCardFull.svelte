@@ -3,7 +3,13 @@
 	import { transcoderEnabled } from '$lib/stores/config';
 	import { DriveCardActions } from '$lib/stores/driveCardActions.svelte';
 	import { defaultSessionChoices, manualRipSessionChoices } from '$lib/utils/sessions';
-	import { hasLiveJob, isDriveDetached, prescanOverrideCount, startRipBlockedReason } from '$lib/utils/drives';
+	import {
+		hasLiveJob,
+		isDriveDetached,
+		isManualMode,
+		prescanOverrideCount,
+		startRipBlockedReason
+	} from '$lib/utils/drives';
 	import type { PrescanKey } from '$lib/utils/drive-settings';
 	import DriveSettingsPanel from './DriveSettingsPanel.svelte';
 	import DriveCardHeader from './DriveCardHeader.svelte';
@@ -35,6 +41,7 @@
 	const isDetached = $derived(isDriveDetached(drive));
 	const startRipBlocked = $derived(startRipBlockedReason(drive));
 	const prescanOverrides = $derived(prescanOverrideCount(drive));
+	const manualMode = $derived(isManualMode(drive, globalAutoRip));
 
 	const pickerSessions = $derived(manualRipSessionChoices(sessions, transcodePresets, $transcoderEnabled));
 	const defaultPickerSessions = $derived(
@@ -119,7 +126,7 @@
 			aria-label="Rip mode"
 			title="Rip on insert (Auto), wait for Start (Manual), or follow the global default"
 			disabled={actions.togglingMode}
-			data-manual={drive.drive_mode === 'manual' || (drive.drive_mode == null && !globalAutoRip)}
+			data-manual={manualMode}
 			value={drive.drive_mode ?? ''}
 			onchange={(e) => actions.setMode(drive.id, (e.currentTarget as HTMLSelectElement).value)}
 		>
@@ -172,6 +179,12 @@
 			>{actions.unenrolling ? 'Unenrolling...' : 'Unenroll'}</button
 		>
 	</div>
+
+	{#if manualMode}
+		<p class="mt-1 drive-card-mode-hint" data-testid="drive-manual-hint">
+			Manual: a disc inserted here waits until you press Start rip.
+		</p>
+	{/if}
 
 	{#if actions.manualError}
 		<p class="field-error mt-1 drive-card-error" data-testid="drive-manual-error">{actions.manualError}</p>
@@ -335,6 +348,10 @@
 
 	.drive-card-error {
 		font-size: 0.6875rem;
+	}
+	.drive-card-mode-hint {
+		font-size: 0.6875rem;
+		color: var(--color-text-muted);
 	}
 	.drive-card-current-rip {
 		border-top: 1px solid var(--color-border);

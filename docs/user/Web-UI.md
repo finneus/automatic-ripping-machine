@@ -23,7 +23,9 @@ transcodes, and the job list (card or table view, filterable by status and
 type), updated live over the WebSocket. Each drive card shows its state (idle,
 reading, ripping, tray open), toggles the drive between **Auto** and **Manual**
 rip mode, and has a **Start rip** button for a disc already in the tray (how you
-rip when auto-rip is off, optionally pinning a session for that disc).
+rip when auto-rip is off, optionally pinning a session for that disc). A drive in
+Manual mode, set on the card or inherited from the global switch, says so under
+its buttons: a disc inserted there waits until you press **Start rip**.
 
 ## Jobs
 

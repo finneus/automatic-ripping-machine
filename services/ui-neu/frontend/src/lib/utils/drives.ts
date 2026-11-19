@@ -67,6 +67,11 @@ export function startRipBlockedReason(d: DriveView): string | null {
 	return MEDIA_BLOCK_REASONS[d.media_status ?? 'unknown'] ?? null;
 }
 
+/** Whether inserting a disc in this drive waits for Start rip: the drive's own mode, else the global switch. */
+export function isManualMode(d: Pick<DriveView, 'drive_mode'>, globalAutoRip: boolean): boolean {
+	return d.drive_mode === 'manual' || (d.drive_mode == null && !globalAutoRip);
+}
+
 /** How many of the four prescan override fields are set on the drive. */
 export function prescanOverrideCount(d: DriveView): number {
 	return [d.prescan_cache_mb, d.prescan_timeout, d.prescan_retries, d.disc_enum_timeout].filter((v) => v != null)
