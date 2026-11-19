@@ -251,6 +251,7 @@ def test_get_config_returns_flag() -> None:
         "makemkv_sdf_enabled": True,
         "ripping_paused": False,
         "manual_wait_seconds": 60,
+        "scan_timeout_seconds": None,
     }
 
 
@@ -3233,6 +3234,26 @@ def test_get_config_unknown_drive_falls_back_to_global() -> None:
     with TestClient(_make_app(db)) as client:
         r = client.get("/api/ripper/config", params={"drive_id": "nope"}, headers=_SERVICE_AUTH)
     assert r.json()["auto_rip_on_insert"] is False
+
+
+def test_get_config_carries_the_drive_scan_timeout_override() -> None:
+    db = FakeSession()
+    db.rows["config"] = [_config()]
+    db.rows["drives"] = [Drive(id="drv_1", hostname="h", device_path="/dev/sr1", prescan_timeout=600)]
+    with TestClient(_make_app(db)) as client:
+        r = client.get("/api/ripper/config", params={"drive_id": "drv_1"}, headers=_SERVICE_AUTH)
+    assert r.json()["scan_timeout_seconds"] == 600
+
+
+@pytest.mark.parametrize("drive_id", [None, "nope"])
+def test_get_config_has_no_scan_timeout_without_a_known_drive(drive_id: str | None) -> None:
+    db = FakeSession()
+    db.rows["config"] = [_config()]
+    params = {} if drive_id is None else {"drive_id": drive_id}
+    with TestClient(_make_app(db)) as client:
+        r = client.get("/api/ripper/config", params=params, headers=_SERVICE_AUTH)
+    assert r.status_code == 200
+    assert r.json()["scan_timeout_seconds"] is None
 
 
 def test_identify_asks_for_tv_first_when_the_disc_is_episodic() -> None:

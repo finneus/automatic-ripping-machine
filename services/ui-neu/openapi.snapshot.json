@@ -148,7 +148,7 @@
           "ripper"
         ],
         "summary": "Get Ripper Config",
-        "description": "Subset of the global Config the ripper reads on each disc insert to\ndecide whether to fire its scan/identify/rip pipeline. Cheap enough to\npoll per-insert; avoids the WS-event invalidation dance for a single\nboolean.\n\n`drive_id` resolves auto-rip per drive: a non-null Drive.drive_mode\noverrides the global Config.auto_rip_on_insert default; NULL follows it\n(setup spec 2026-10-01 D1). Rippers that omit it get the global value.",
+        "description": "Subset of the global Config the ripper reads on each disc insert to\ndecide whether to fire its scan/identify/rip pipeline. Cheap enough to\npoll per-insert; avoids the WS-event invalidation dance for a single\nboolean.\n\n`drive_id` resolves auto-rip per drive: a non-null Drive.drive_mode\noverrides the global Config.auto_rip_on_insert default; NULL follows it\n(setup spec 2026-10-01 D1). Rippers that omit it get the global value.\nThe drive's `prescan_timeout` override rides along as `scan_timeout_seconds`.",
         "operationId": "get_ripper_config_api_ripper_config_get",
         "security": [
           {
@@ -15590,6 +15590,17 @@
             "type": "integer",
             "title": "Manual Wait Seconds",
             "default": 60
+          },
+          "scan_timeout_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Timeout Seconds"
           }
         },
         "type": "object",

@@ -26,7 +26,9 @@ from arm_ripper.scan.makemkv import (
     _raise_for_failure,
     _read_info_stderr,
     _read_info_stdout,
+    current_scan_timeout,
     scan_disc,
+    scan_timeout,
 )  # noqa: E402
 
 
@@ -125,6 +127,42 @@ async def test_timeout_kills_reaps_and_suppresses_cause(monkeypatch: pytest.Monk
     assert excinfo.value.__suppress_context__ is True
     assert proc.killed is True
     assert proc.waited is True
+
+
+async def test_timeout_uses_the_drive_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A drive's prescan_timeout replaces the built-in ceiling for the scans run inside `scan_timeout`."""
+    proc = _Proc(_HangingStream())
+    _spawn(monkeypatch, proc)
+    monkeypatch.setattr(makemkv_mod, "SCAN_TIMEOUT_SECONDS", 3600.0)
+
+    with scan_timeout(1), pytest.raises(ScanError) as excinfo:
+        await scan_disc("/dev/sr0")
+
+    assert str(excinfo.value) == "makemkvcon timed out after 1.0s"
+    assert proc.killed is True
+
+
+def test_current_scan_timeout_is_the_default_outside_an_override() -> None:
+    assert current_scan_timeout() == makemkv_mod.SCAN_TIMEOUT_SECONDS
+
+
+def test_scan_timeout_applies_a_positive_override_only_inside_the_block() -> None:
+    with scan_timeout(600):
+        assert current_scan_timeout() == 600.0
+    assert current_scan_timeout() == makemkv_mod.SCAN_TIMEOUT_SECONDS
+
+
+@pytest.mark.parametrize("seconds", [None, 0, -5])
+def test_scan_timeout_keeps_the_default_for_an_unset_or_non_positive_override(seconds: int | None) -> None:
+    with scan_timeout(seconds):
+        assert current_scan_timeout() == makemkv_mod.SCAN_TIMEOUT_SECONDS
+
+
+def test_scan_timeout_restores_the_outer_override_after_an_error() -> None:
+    with scan_timeout(600):
+        with pytest.raises(RuntimeError), scan_timeout(900):
+            raise RuntimeError("scan blew up")
+        assert current_scan_timeout() == 600.0
 
 
 async def test_nonzero_exit_reports_stripped_stderr(monkeypatch: pytest.MonkeyPatch) -> None:

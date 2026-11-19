@@ -1,5 +1,8 @@
 import asyncio
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import NamedTuple
 
 from arm_common import DiscType
@@ -11,6 +14,27 @@ from arm_ripper.source import makemkv_source_url
 logger = logging.getLogger("arm_ripper.scan.makemkv")
 
 SCAN_TIMEOUT_SECONDS = 300.0
+
+# The drive's `prescan_timeout` override for the scan in progress; None = SCAN_TIMEOUT_SECONDS. A ContextVar so the
+# job controller sets it around one pipeline's scan without threading it through every scan layer in between.
+_scan_timeout_override: ContextVar[float | None] = ContextVar("scan_timeout_override", default=None)
+
+
+@contextmanager
+def scan_timeout(seconds: int | None) -> Iterator[None]:
+    """Run the block's `makemkvcon info` scans under `seconds`; None or a non-positive value keeps the default."""
+    token = _scan_timeout_override.set(float(seconds) if seconds is not None and seconds > 0 else None)
+    try:
+        yield
+    finally:
+        _scan_timeout_override.reset(token)
+
+
+def current_scan_timeout() -> float:
+    """The timeout one `makemkvcon info` scan runs under now: the drive's override, else SCAN_TIMEOUT_SECONDS."""
+    override = _scan_timeout_override.get()
+    return SCAN_TIMEOUT_SECONDS if override is None else override
+
 
 # MakeMKV emits this when its hard-coded 60-day beta kill-switch has fired.
 # No registration key overrides it; the binary refuses all protected-disc
@@ -115,12 +139,13 @@ async def _run_info(device_path: str) -> _InfoRun:
     except FileNotFoundError as e:
         raise ScanError("makemkvcon binary not found on PATH") from e
 
+    timeout = current_scan_timeout()
     try:
-        stdout, stderr, expired = await asyncio.wait_for(_read_makemkvcon_stream(proc), timeout=SCAN_TIMEOUT_SECONDS)
+        stdout, stderr, expired = await asyncio.wait_for(_read_makemkvcon_stream(proc), timeout=timeout)
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
-        raise ScanError(f"makemkvcon timed out after {SCAN_TIMEOUT_SECONDS}s") from None
+        raise ScanError(f"makemkvcon timed out after {timeout}s") from None
 
     await proc.wait()
     return _InfoRun(stdout, stderr, expired, proc.returncode)
