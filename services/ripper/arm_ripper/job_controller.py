@@ -56,6 +56,7 @@ class JobController:
         ws: WSClient | None = None,
         device_path: str | DriveHandle | None = None,
         default_min_length_seconds: int = DEFAULT_MIN_LENGTH_SECONDS,
+        hash_titles: bool = True,
         resolution_timeout: float | None = RESOLUTION_TIMEOUT_UNSET,  # type: ignore[assignment]
     ) -> None:
         self._client = client
@@ -86,6 +87,8 @@ class JobController:
         # `main.py` from `ARM_MIN_LENGTH_SECONDS`; tests get the dispatcher
         # default (600).
         self._default_min_length_seconds = default_min_length_seconds
+        # Whether each ripped title's sha256 is computed (`ARM_HASH_TITLES`).
+        self._hash_titles = hash_titles
         # Parks a held job until it leaves its gate. `resolution_timeout` is the ceiling on an
         # AWAITING_USER_ID / AWAITING_REVIEW park, in seconds; None means wait indefinitely — source
         # mode's one-shot container must not exit (and have the backend watchdog mark the job FAILED)
@@ -470,6 +473,7 @@ class JobController:
             ejector=self._ejector,
             device=self._device,
             default_min_length_seconds=self._default_min_length_seconds,
+            hash_titles=self._hash_titles,
             output_dir=raw_dir.RAW_ROOT / job_id,
             job_id=job_id,
             disc_type=disc_type,

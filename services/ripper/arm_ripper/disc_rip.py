@@ -97,6 +97,7 @@ class DiscRip:
         ejector: Ejector,
         device: DriveHandle,
         default_min_length_seconds: int,
+        hash_titles: bool,
         output_dir: Path,
         job_id: str,
         disc_type: DiscType,
@@ -124,6 +125,7 @@ class DiscRip:
         self._min_length_seconds = (
             rip_start.min_length_seconds if rip_start.min_length_seconds is not None else default_min_length_seconds
         )
+        self._hash_titles = hash_titles
         self._rip_path = device_path
         self._rip_dir = self._output_dir
         self._skip: set[str] = set()
@@ -286,6 +288,7 @@ class DiscRip:
                 stop=self._lost if self._resumable else None,
                 skip_track_ids=self._skip,
                 drive_lost=(functools.partial(self._drive_gone, self._rip_path) if self._resumable else None),
+                hash_titles=self._hash_titles,
             )
         finally:
             if watcher is not None:

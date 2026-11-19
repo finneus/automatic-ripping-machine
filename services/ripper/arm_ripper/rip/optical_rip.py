@@ -143,6 +143,7 @@ class _OpticalRip:
         stop: asyncio.Event | None,
         drive_lost: Callable[[], bool] | None,
         title_index: int | None,
+        hash_titles: bool,
     ) -> None:
         self._device_path = device_path
         self._output_dir = output_dir
@@ -161,7 +162,7 @@ class _OpticalRip:
         # streamer's mid-rip on_title_done callback. The post-rip
         # attribution loop skips these to avoid double-PATCHing.
         self._done_emitted: set[int] = set(skipped)
-        self._hasher = TitleHasher()
+        self._hasher = TitleHasher(hash_files=hash_titles)
 
     def _drive_dropped(self) -> bool:
         """The drive left the bus under this rip (D-133). The first time
@@ -401,8 +402,10 @@ async def rip_optical(
     stop: asyncio.Event | None = None,
     skip_track_ids: Collection[str] = (),
     drive_lost: Callable[[], bool] | None = None,
+    hash_titles: bool = True,
 ) -> None:
-    """Single-invocation DVD/BD rip with per-title attribution.
+    """Single-invocation DVD/BD rip with per-title attribution. `hash_titles=False` reports each title without a
+    sha256 instead of re-reading it.
 
     The makemkvcon invocation rips every title ≥ minlength to
     `output_dir`, or, when the operator kept exactly one eligible title,
@@ -461,6 +464,7 @@ async def rip_optical(
         stop=stop,
         drive_lost=drive_lost,
         title_index=title_index,
+        hash_titles=hash_titles,
     ).run()
 
 

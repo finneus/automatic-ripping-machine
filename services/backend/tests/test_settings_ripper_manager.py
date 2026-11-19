@@ -30,5 +30,6 @@ def test_ripper_tunable_passthroughs_default_empty() -> None:
         "ARM_RIPPER_NOT_READY_REARM_POLLS",
         "ARM_RIPPER_OPTICAL_SR_MAX",
         "ARM_RIPPER_OPTICAL_SG_MAX",
+        "ARM_RIPPER_HASH_TITLES",
     ):
         assert getattr(s, key) == ""

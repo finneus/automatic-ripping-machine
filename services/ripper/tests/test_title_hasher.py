@@ -58,3 +58,54 @@ async def test_cancel_stops_the_hashing_thread_mid_file(tmp_path: Path, monkeypa
     release.set()
     await asyncio.sleep(0.3)
     assert chunks <= 2
+
+
+async def test_hashing_off_reports_each_title_at_once_without_reading_it(tmp_path: Path, monkeypatch) -> None:
+    """ARM_HASH_TITLES=false: no re-read; each title gets None and finish has nothing left to verify."""
+    import arm_ripper.rip.title_hasher as title_hasher
+
+    async def must_not_hash(*_a, **_k):
+        raise AssertionError("hashing is off")
+
+    monkeypatch.setattr(title_hasher, "sha256_file", must_not_hash)
+    hasher = TitleHasher(hash_files=False)
+    digests: list[str | None] = []
+
+    async def then(digest: str | None) -> None:
+        digests.append(digest)
+
+    hasher.submit(tmp_path / "t00.mkv", 10_000, then)
+    progress: list[tuple[int, int, float | None]] = []
+
+    async def on_progress(done: int, total: int, rate: float | None) -> None:
+        progress.append((done, total, rate))
+
+    await hasher.finish(on_progress)
+    assert digests == [None]
+    assert hasher._bytes_total == 0
+
+
+async def test_hashing_on_reports_the_digest(tmp_path: Path) -> None:
+    path = tmp_path / "t00.mkv"
+    path.write_bytes(b"abc")
+    hasher = TitleHasher()
+    digests: list[str | None] = []
+
+    async def then(digest: str | None) -> None:
+        digests.append(digest)
+
+    hasher.submit(path, 3, then)
+    await hasher.finish()
+    assert digests == ["ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"]
+
+
+async def test_an_unreadable_title_reports_no_digest(tmp_path: Path) -> None:
+    hasher = TitleHasher()
+    digests: list[str | None] = []
+
+    async def then(digest: str | None) -> None:
+        digests.append(digest)
+
+    hasher.submit(tmp_path / "missing.mkv", 3, then)
+    await hasher.finish()
+    assert digests == [None]

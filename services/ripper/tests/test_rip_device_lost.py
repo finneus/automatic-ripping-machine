@@ -506,6 +506,7 @@ def _disc_rip(controller: JobController) -> disc_rip_module.DiscRip:
         ejector=controller._ejector,
         device=controller._device,
         default_min_length_seconds=controller._default_min_length_seconds,
+        hash_titles=controller._hash_titles,
         output_dir=raw_dir_module.RAW_ROOT / _JOB,
         job_id=_JOB,
         disc_type=DiscType.BLURAY,

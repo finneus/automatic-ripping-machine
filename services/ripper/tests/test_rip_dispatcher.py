@@ -2025,3 +2025,40 @@ async def test_rip_all_single_title_still_fails_a_kept_title_below_minlength(mon
     assert outcomes["trk_0"] == (True, None)
     assert outcomes["trk_1"][0] is False
     assert "below minlength=600s" in (outcomes["trk_1"][1] or "")
+
+
+async def test_rip_all_hands_the_hash_switch_to_the_title_hasher(monkeypatch, tmp_path):
+    """ARM_HASH_TITLES reaches the optical rip's TitleHasher (off: no re-read, sha256 None)."""
+    made: list[bool] = []
+    real = optical_rip_module.TitleHasher
+
+    def spy(*, hash_files: bool = True):
+        made.append(hash_files)
+        return real(hash_files=hash_files)
+
+    monkeypatch.setattr(optical_rip_module, "TitleHasher", spy)
+    (tmp_path / "title_t00.mkv").write_bytes(b"x")
+    fake_result = RipDiscResult(
+        overall_error=None, titles={0: RipResult(ok=True, output_path=tmp_path / "title_t00.mkv", size_bytes=1)}
+    )
+    _stub_rip_disc(monkeypatch, fake_result, fire_per_title_start=False)
+    done: list[RipResult] = []
+
+    async def noop(*_a: Any, **_k: Any) -> None:
+        return None
+
+    async def on_done(track: TrackView, result: RipResult) -> None:
+        done.append(result)
+
+    await rip_all(
+        disc_type=DiscType.BLURAY,
+        device_path="/dev/sr0",
+        tracks=[_track(0)],
+        output_dir=tmp_path,
+        on_track_start=noop,
+        on_track_done=on_done,
+        min_length_seconds=600,
+        hash_titles=False,
+    )
+    assert made == [False]
+    assert [(r.ok, r.sha256) for r in done] == [(True, None)]
