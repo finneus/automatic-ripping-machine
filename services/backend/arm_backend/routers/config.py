@@ -45,6 +45,7 @@ from arm_backend.constants import CONFIG_SINGLETON_ID
 from arm_common import Config, Job, JobStatus, User
 from arm_common.config_metadata import CONFIG_FIELD_META
 from arm_common.enums import PreviouslyRippedAction
+from arm_common.languages import preferred_languages
 from arm_common.schemas import (
     ConfigUpdateRequest,
     ConfigView,
@@ -93,6 +94,7 @@ def _to_view(cfg: Config) -> ConfigView:
         # server_default only) for rows/fixtures predating these columns.
         hold_for_review=bool(cfg.hold_for_review),
         manual_wait_seconds=int(cfg.manual_wait_seconds) if cfg.manual_wait_seconds is not None else 60,
+        preferred_audio_languages=preferred_languages(cfg.preferred_audio_languages),
         on_previously_ripped=cfg.on_previously_ripped or PreviouslyRippedAction.HOLD,
         drive_scan_interval_seconds=int(cfg.drive_scan_interval_seconds or 30),
         drive_detected_prune_days=int(cfg.drive_detected_prune_days or 7),

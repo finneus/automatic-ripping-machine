@@ -677,6 +677,10 @@ export type ConfigUpdateRequest = {
      * Manual Wait Seconds
      */
     manual_wait_seconds?: number | null;
+    /**
+     * Preferred Audio Languages
+     */
+    preferred_audio_languages?: Array<string> | null;
     on_previously_ripped?: PreviouslyRippedAction | null;
     /**
      * Notifications Enabled
@@ -822,6 +826,10 @@ export type ConfigView = {
      * Manual Wait Seconds
      */
     manual_wait_seconds: number;
+    /**
+     * Preferred Audio Languages
+     */
+    preferred_audio_languages: Array<string>;
     on_previously_ripped: PreviouslyRippedAction;
     default_retention_policy: RetentionPolicy;
     /**
@@ -4318,6 +4326,10 @@ export type ScanTitle = {
      * Source File
      */
     source_file?: string | null;
+    /**
+     * Audio Languages
+     */
+    audio_languages?: Array<string>;
 };
 
 /**

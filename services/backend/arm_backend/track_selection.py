@@ -1,7 +1,11 @@
+from collections.abc import Sequence
+
 from arm_common import TrackStatus, DiscType, OutputMode, RipPreset, Track, TrackKind, TrackSelection
 from arm_common.schemas import ScanResult, ScanTitle, TrackFilters
 
 MAIN_FEATURE_MIN_SECONDS = 45 * 60
+# Titles this close to the longest are variants of the film: a UHD can carry it once per language group.
+MAIN_FEATURE_TIE_SECONDS = 60
 ALL_TRACKS_MIN_SECONDS = 60
 
 
@@ -63,15 +67,29 @@ def _apply_custom_filters(titles: list[ScanTitle], filters: TrackFilters) -> lis
     return candidates
 
 
-def _select_video(scan: ScanResult, rip_preset: RipPreset, job_id: str) -> list[Track]:
+def _variant_rank(title: ScanTitle, preferred: Sequence[str]) -> tuple[tuple[bool, ...], int, int]:
+    """How well one variant of the film fits: which preferred audio languages it has (in preference order), then how
+    many audio languages it has, then its size (the variant with every language group is the largest)."""
+    languages = set(title.audio_languages)
+    return tuple(lang in languages for lang in preferred), len(languages), title.size_bytes or 0
+
+
+def _main_feature(titles: list[ScanTitle], preferred: Sequence[str]) -> ScanTitle:
+    """The main feature: among the titles within `MAIN_FEATURE_TIE_SECONDS` of the longest one (that runs at least
+    `MAIN_FEATURE_MIN_SECONDS` when any does), the best `_variant_rank`; on a full tie the lowest index."""
+    eligible = [t for t in titles if t.duration_seconds >= MAIN_FEATURE_MIN_SECONDS] or titles
+    longest = max(t.duration_seconds for t in eligible)
+    variants = [t for t in eligible if longest - t.duration_seconds <= MAIN_FEATURE_TIE_SECONDS]
+    return max(variants, key=lambda t: _variant_rank(t, preferred))
+
+
+def _select_video(scan: ScanResult, rip_preset: RipPreset, job_id: str, preferred: Sequence[str]) -> list[Track]:
     titles = scan.titles
     if not titles:
         return []
     rule = rip_preset.track_selection
     if rule == TrackSelection.MAIN_FEATURE:
-        eligible = [t for t in titles if t.duration_seconds >= MAIN_FEATURE_MIN_SECONDS]
-        chosen = max(eligible or titles, key=lambda t: t.duration_seconds)
-        return [_video_track(job_id, chosen)]
+        return [_video_track(job_id, _main_feature(titles, preferred))]
     if rule == TrackSelection.ALL_TRACKS:
         return [_video_track(job_id, t) for t in titles if t.duration_seconds >= ALL_TRACKS_MIN_SECONDS]
     if rule == TrackSelection.ARCHIVE:
@@ -127,19 +145,24 @@ def _whole_disc_tracks(job_id: str, scan: ScanResult, rip_preset: RipPreset) -> 
     return None
 
 
-def select_tracks(job_id: str, scan: ScanResult, rip_preset: RipPreset) -> list[Track]:
-    """Apply rip-preset track-selection rules to a scan."""
+def select_tracks(
+    job_id: str, scan: ScanResult, rip_preset: RipPreset, preferred_audio_languages: Sequence[str] = ()
+) -> list[Track]:
+    """Apply rip-preset track-selection rules to a scan. `preferred_audio_languages` (terminological codes, in
+    order) picks the main feature among same-length variants of the film."""
     whole = _whole_disc_tracks(job_id, scan, rip_preset)
     if whole is not None:
         return whole
     if scan.disc_type in (DiscType.DVD, DiscType.BLURAY):
-        return _select_video(scan, rip_preset, job_id)
+        return _select_video(scan, rip_preset, job_id, preferred_audio_languages)
     if scan.disc_type == DiscType.CD:
         return _select_audio(scan, rip_preset, job_id)
     raise TrackSelectionError(f"cannot select tracks for disc_type={scan.disc_type}")
 
 
-def select_tracks_for_review(job_id: str, scan: ScanResult, rip_preset: RipPreset) -> list[Track]:
+def select_tracks_for_review(
+    job_id: str, scan: ScanResult, rip_preset: RipPreset, preferred_audio_languages: Sequence[str] = ()
+) -> list[Track]:
     """Persist EVERY scanned title as a Track for the timed review gate, marking
     preset-rejected titles `excluded=True` (the default keep/drop set) so the
     review UI shows the full title list and the operator can re-enable any.
@@ -155,7 +178,7 @@ def select_tracks_for_review(job_id: str, scan: ScanResult, rip_preset: RipPrese
     if whole is not None:
         return whole
 
-    kept_refs = {t.source_ref for t in select_tracks(job_id, scan, rip_preset)}
+    kept_refs = {t.source_ref for t in select_tracks(job_id, scan, rip_preset, preferred_audio_languages)}
     is_cd = scan.disc_type == DiscType.CD
     rows: list[Track] = []
     for title in scan.titles:

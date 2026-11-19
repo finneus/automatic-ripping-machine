@@ -8953,6 +8953,20 @@
             ],
             "title": "Manual Wait Seconds"
           },
+          "preferred_audio_languages": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Audio Languages"
+          },
           "on_previously_ripped": {
             "anyOf": [
               {
@@ -9215,6 +9229,13 @@
             "type": "integer",
             "title": "Manual Wait Seconds"
           },
+          "preferred_audio_languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Preferred Audio Languages"
+          },
           "on_previously_ripped": {
             "$ref": "#/components/schemas/PreviouslyRippedAction"
           },
@@ -9366,6 +9387,7 @@
           "ripping_paused",
           "hold_for_review",
           "manual_wait_seconds",
+          "preferred_audio_languages",
           "on_previously_ripped",
           "default_retention_policy",
           "notification_apprise_urls",
@@ -15771,6 +15793,13 @@
               }
             ],
             "title": "Source File"
+          },
+          "audio_languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Audio Languages"
           }
         },
         "type": "object",

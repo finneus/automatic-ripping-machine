@@ -99,6 +99,12 @@ class Config(SQLModel, table=True):
     # rip (suppressed while `ripping_paused`). Off = today's auto-rip behavior.
     hold_for_review: bool = Field(sa_column=Column(Boolean, nullable=False, server_default="false"))
     manual_wait_seconds: int = Field(sa_column=Column(Integer, nullable=False, server_default="60"))
+    # Audio languages the main-feature pick prefers among same-length variants of the film (a UHD often carries
+    # the film several times, one per language group), in order. Empty = no preference.
+    preferred_audio_languages: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(ARRAY(String), nullable=False, server_default="{}"),
+    )
     # A disc whose fingerprint matches an earlier rip (on any drive): hold it
     # for the operator, reject (eject) it, or rip it again. VARCHAR, validated
     # app-side by PreviouslyRippedAction.

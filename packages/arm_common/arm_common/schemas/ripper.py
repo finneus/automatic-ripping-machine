@@ -70,6 +70,8 @@ class ScanTitle(BaseModel):
     chapter_count: int | None = None
     size_bytes: int | None = None
     source_file: str | None = None
+    # The title's audio languages from the scan (MakeMKV SINFO), terminological ISO 639-2 codes in stream order.
+    audio_languages: list[str] = Field(default_factory=list)
 
 
 class DiscFingerprintInput(BaseModel):

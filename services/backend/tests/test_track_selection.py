@@ -5,6 +5,7 @@ import pytest
 from arm_backend.track_selection import (
     ALL_TRACKS_MIN_SECONDS,
     MAIN_FEATURE_MIN_SECONDS,
+    MAIN_FEATURE_TIE_SECONDS,
     select_tracks,
     select_tracks_for_review,
 )
@@ -223,3 +224,69 @@ def test_review_folder_preset_persists_the_single_backup():
     scan = ScanResult(disc_type=DiscType.BLURAY, titles=[ScanTitle(index=0, duration_seconds=7200)])
     tracks = select_tracks_for_review("job_01JZXR7K3M5Q8N4VWA00000001", scan, _backup_preset())
     assert [(t.kind, t.excluded) for t in tracks] == [(TrackKind.DISC_BACKUP, False)]
+
+
+# --- main feature among same-length variants (one per language group) ---------------------------------------------
+
+
+def _variants(*titles: tuple[int, list[str], int]) -> ScanResult:
+    """A Blu-ray whose titles are (duration, audio languages, size) in index order."""
+    return ScanResult(
+        disc_type=DiscType.BLURAY,
+        titles=[
+            ScanTitle(index=i, duration_seconds=d, audio_languages=langs, size_bytes=size)
+            for i, (d, langs, size) in enumerate(titles)
+        ],
+    )
+
+
+# Skyfall on UHD: the film three times at the same length.
+_SKYFALL = _variants(
+    (8590, ["eng", "jpn"], 56_000),
+    (8590, ["eng", "ces", "deu", "fra", "hun", "ita", "pol", "spa"], 61_800),
+    (8590, ["eng", "ces", "deu", "fra", "hun", "ita", "jpn", "pol", "spa"], 62_800),
+)
+
+
+def _main(scan: ScanResult, preferred: tuple[str, ...] = ()) -> str:
+    tracks = select_tracks("job_01JZXR7K3M5Q8N4VWA00000001", scan, _preset(TrackSelection.MAIN_FEATURE), preferred)
+    assert len(tracks) == 1
+    return tracks[0].source_ref
+
+
+def test_main_feature_prefers_the_variant_with_the_preferred_languages():
+    scan = _variants((8590, ["eng", "jpn"], 63_000), (8590, ["deu", "eng"], 56_000), (8590, ["fra"], 70_000))
+    assert _main(scan, ("deu", "eng")) == "1"
+
+
+def test_main_feature_ranks_preferred_languages_in_order():
+    scan = _variants((8590, ["eng"], 70_000), (8590, ["deu"], 50_000))
+    assert _main(scan, ("deu", "eng")) == "1"
+
+
+def test_main_feature_without_a_preference_takes_the_most_languages_then_the_largest():
+    assert _main(_SKYFALL) == "2"
+    same_languages = _variants((8590, ["deu", "eng"], 50_000), (8590, ["eng", "deu"], 60_000))
+    assert _main(same_languages) == "1"
+
+
+def test_main_feature_without_language_data_takes_the_largest_variant():
+    assert _main(_variants((8590, [], 56_000), (8590, [], 62_800), (8590, [], 61_800))) == "1"
+
+
+def test_main_feature_full_tie_keeps_the_first_title():
+    assert _main(_variants((8590, ["eng"], 100), (8590, ["eng"], 100))) == "0"
+
+
+def test_main_feature_variant_window_is_measured_from_the_longest_title():
+    near = 9000 - MAIN_FEATURE_TIE_SECONDS
+    far = 9000 - MAIN_FEATURE_TIE_SECONDS - 1
+    assert _main(_variants((9000, ["eng"], 10), (near, ["deu", "eng"], 10)), ("deu",)) == "1"
+    assert _main(_variants((9000, ["eng"], 10), (far, ["deu", "eng"], 10)), ("deu",)) == "0"
+
+
+def test_review_keeps_the_preferred_variant_and_excludes_the_others():
+    tracks = select_tracks_for_review(
+        "job_01JZXR7K3M5Q8N4VWA00000001", _SKYFALL, _preset(TrackSelection.MAIN_FEATURE), ("deu", "eng")
+    )
+    assert [t.excluded for t in tracks] == [True, True, False]

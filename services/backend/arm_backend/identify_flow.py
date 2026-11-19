@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
 from arm_backend import iso_prepare
+from arm_backend.audio_preference import preferred_audio_languages
 from arm_backend.disc_dedupe import find_previous_rips, find_reusable_job_for_disc
 from arm_backend.metadata import MetadataDispatcher
 from arm_backend.metadata.base import MetadataResult
@@ -78,7 +79,7 @@ async def _persist_review_tracks(db: AsyncSession, job: Job, scan: ScanResult) -
     }
     added: list[Track] = []
     try:
-        review_tracks = select_tracks_for_review(job.id, scan, preset)
+        review_tracks = select_tracks_for_review(job.id, scan, preset, await preferred_audio_languages(db))
     except DiscBackupNeedsBluray as exc:
         logger.warning("skipping review tracks for job_id=%s: %s", job.id, exc)
         return

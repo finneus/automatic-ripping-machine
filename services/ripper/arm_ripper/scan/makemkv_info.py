@@ -4,6 +4,7 @@ import re
 from typing import Callable, Iterable
 
 from arm_common import DiscType
+from arm_common.languages import terminological
 from arm_common.schemas import ScanTitle
 
 _DURATION_RE = re.compile(r"^(\d+):(\d{1,2}):(\d{1,2})$")
@@ -29,6 +30,29 @@ def _to_int(value: str) -> int | None:
         return int(value)
     except ValueError:
         return None
+
+
+# SINFO attribute codes this parser reads: the stream type (its code field says which: 6202 is audio) and the
+# stream's ISO 639-2 language code.
+_SINFO_TYPE = 1
+_SINFO_LANGUAGE = 3
+_AUDIO_STREAM = 6202
+
+# A title's streams: stream index -> {SINFO attribute code: value}.
+_Streams = dict[int, dict[int, int | str]]
+
+
+def _audio_languages(streams: _Streams) -> list[str]:
+    """The title's audio languages as terminological codes, each once, in stream order."""
+    out: list[str] = []
+    for idx in sorted(streams):
+        stream = streams[idx]
+        language = stream.get(_SINFO_LANGUAGE)
+        if stream.get(_SINFO_TYPE) == _AUDIO_STREAM and isinstance(language, str) and language:
+            code = terminological(language)
+            if code not in out:
+                out.append(code)
+    return out
 
 
 # TINFO attribute code -> (title field, parser). A field is set only when its parser returns a value.
@@ -71,8 +95,8 @@ def _split_robot_line(raw: str) -> tuple[str, list[str]] | None:
     return msg_type, [f.strip() for f in rest.split(",")]
 
 
-def _scan_title(idx: int, entry: dict[str, object]) -> ScanTitle | None:
-    """The ScanTitle for one title's collected TINFO fields; None when it has no duration."""
+def _scan_title(idx: int, entry: dict[str, object], streams: _Streams) -> ScanTitle | None:
+    """The ScanTitle for one title's collected TINFO fields and SINFO streams; None when it has no duration."""
     duration_obj = entry.get("duration_seconds")
     if not isinstance(duration_obj, int):
         return None
@@ -85,6 +109,7 @@ def _scan_title(idx: int, entry: dict[str, object]) -> ScanTitle | None:
         chapter_count=chapter_obj if isinstance(chapter_obj, int) else None,
         size_bytes=size_obj if isinstance(size_obj, int) else None,
         source_file=source_obj if isinstance(source_obj, str) else None,
+        audio_languages=_audio_languages(streams),
     )
 
 
@@ -95,6 +120,7 @@ class _InfoParser:
         self.volume_label: str | None = None
         self.mkv_disc_type: DiscType | None = None
         self.titles: dict[int, dict[str, object]] = {}
+        self.streams: dict[int, _Streams] = {}
 
     def feed(self, raw: str) -> None:
         """Route one line to its handler; other lines are ignored."""
@@ -106,6 +132,8 @@ class _InfoParser:
             self.on_cinfo(fields)
         elif msg_type == "TINFO" and len(fields) >= 4:
             self.on_tinfo(fields)
+        elif msg_type == "SINFO" and len(fields) >= 5:
+            self.on_sinfo(fields)
 
     def on_cinfo(self, fields: list[str]) -> None:
         try:
@@ -132,9 +160,27 @@ class _InfoParser:
             if field_value is not None:
                 entry[name] = field_value
 
+    def on_sinfo(self, fields: list[str]) -> None:
+        """Keep a stream's type (the attribute's code field) and language (its value); other attributes are skipped."""
+        try:
+            title_idx, stream_idx, attr, code = (int(f) for f in fields[:4])
+        except ValueError:
+            return
+        if attr == _SINFO_TYPE:
+            value: int | str = code
+        elif attr == _SINFO_LANGUAGE:
+            value = _strip_quotes(",".join(fields[4:]))
+        else:
+            return
+        self.streams.setdefault(title_idx, {}).setdefault(stream_idx, {})[attr] = value
+
     def scan_titles(self) -> list[ScanTitle]:
         """The titles with a duration, in index order."""
-        return [title for idx in sorted(self.titles) if (title := _scan_title(idx, self.titles[idx])) is not None]
+        return [
+            title
+            for idx in sorted(self.titles)
+            if (title := _scan_title(idx, self.titles[idx], self.streams.get(idx, {}))) is not None
+        ]
 
 
 def parse_makemkvcon_info(
@@ -154,6 +200,8 @@ def parse_makemkvcon_info(
     - TINFO:t,8,...  — chapter count
     - TINFO:t,11,... — title size in bytes
     - TINFO:t,27,... — source filename (e.g. title_t00.mkv)
+    - SINFO:t,s,1,6202,... — stream s of title t is an audio stream
+    - SINFO:t,s,3,...      — the stream's language code (`ger`, `eng`)
 
     Reference: https://github.com/automatic-ripping-machine/automatic-ripping-machine/wiki/MakeMKV-Codes
     """
