@@ -678,6 +678,7 @@ export type ConfigUpdateRequest = {
      */
     manual_wait_seconds?: number | null;
     on_previously_ripped?: PreviouslyRippedAction | null;
+    default_retention_policy?: RetentionPolicy | null;
     /**
      * Notifications Enabled
      */

@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
 from arm_backend.config import Settings
+from arm_backend.raw_retention import prune_raw_after_sessions
 from arm_common import (
     SessionApplication,
     SessionApplicationStatus,
@@ -306,6 +307,8 @@ class _PassthroughRun:
         # Commit the terminal state (+ any aggregate transition) as its own
         # transaction, separate from the claim commit above.
         await self._db.commit()
+        if self._application is not None:
+            await prune_raw_after_sessions(self._db, self._application.job_id, Path(self._settings.RAW_ROOT))
         return error is None
 
     async def _refetch_task(self) -> TranscodeTask | None:

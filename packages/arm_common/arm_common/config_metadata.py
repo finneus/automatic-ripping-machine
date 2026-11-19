@@ -349,10 +349,18 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         type="int",
         editable=True,
     ),
-    # NOTE: default_retention_policy is intentionally NOT registered — the column
-    # + RetentionPolicy enum persist, but no consumer prunes raw rips yet, so the
-    # knob is hidden rather than shown-but-inert. Re-add when retention lands.
-    # See docs/superpowers/specs/2026-06-18-settings-audit-design.md §1.1.
+    ConfigFieldMeta(
+        key="default_retention_policy",
+        group="Ripping",
+        tier="operator",
+        label="Raw rips after the sessions",
+        help="Keep: the raw rip stays in /raw. Delete: once every session applied to a disc is done, its raw rip "
+        "(titles no session used, the source of an encode) is deleted. A partial rip or a failed session keeps it.",
+        type="enum",
+        editable=True,
+        enum_values=["keep_forever", "prune_after_session"],
+        enum_labels={"keep_forever": "Keep", "prune_after_session": "Delete after the sessions are done"},
+    ),
     # --- Transcoding ---
     ConfigFieldMeta(
         key="transcode_enabled",

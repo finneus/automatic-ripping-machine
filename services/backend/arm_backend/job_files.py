@@ -62,6 +62,12 @@ def _remove_raw_dir(raw_dir: Path, job_id: str) -> int:
     return 1
 
 
+def remove_raw_dir(job_id: str, raw_root: Path) -> int:
+    """rmtree the job's raw dir under `raw_root` (`_raw_dir_of` checks the id). 1 when removed, else 0; raises
+    ValueError on a malformed job id."""
+    return _remove_raw_dir(_raw_dir_of(job_id, raw_root), job_id)
+
+
 def _remove_disc_backup(path: Path, media_root: Path) -> bool:
     """Remove a disc backup folder's structure. True when the output counts as removed."""
     # A disc backup's output is its title folder. Only ever the
@@ -130,8 +136,7 @@ def delete_job_files(
     Idempotent: missing raw dir, missing files, and missing parents are all
     expected. Returns counters for the operator log.
     """
-    raw_dir = _raw_dir_of(job_id, raw_root)
-    raw_removed = _remove_raw_dir(raw_dir, job_id)
+    raw_removed = remove_raw_dir(job_id, raw_root)
 
     files_removed = 0
     parents_seen: set[Path] = set()

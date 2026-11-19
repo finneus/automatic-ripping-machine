@@ -124,6 +124,7 @@ class ConfigUpdateRequest(BaseModel):
     hold_for_review: bool | None = None
     manual_wait_seconds: int | None = None
     on_previously_ripped: PreviouslyRippedAction | None = None
+    default_retention_policy: RetentionPolicy | None = None
     notifications_enabled: bool | None = None
     movie_sources: list[str] | None = None
     music_sources: list[str] | None = None

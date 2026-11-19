@@ -8936,6 +8936,16 @@
               }
             ]
           },
+          "default_retention_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetentionPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "notifications_enabled": {
             "anyOf": [
               {
