@@ -435,3 +435,72 @@ async def test_feed_tries_handlers_in_order_and_stops_at_the_first_taker(monkeyp
     install(parser, "title_line")
     await parser.feed("M")
     assert calls == [f"{n}:M" for n in names[:4]]
+
+
+# --- MSG:2003 disc read errors ---------------------------------------------------------------------------------------
+
+_READ_ERROR = (
+    "MSG:2003,0,3,\"Error 'Scsi error - MEDIUM ERROR:L-EC UNCORRECTABLE ERROR' occurred while reading "
+    "'/BDMV/STREAM/00055.m2ts' at offset '1048576'\",\"Error '%1' occurred while reading '%2' at offset '%3'\","
+    '"Scsi error - MEDIUM ERROR:L-EC UNCORRECTABLE ERROR","/BDMV/STREAM/00055.m2ts","1048576"'
+)
+_READ_ERROR_TEXT = (
+    "Error 'Scsi error - MEDIUM ERROR:L-EC UNCORRECTABLE ERROR' occurred while reading "
+    "'/BDMV/STREAM/00055.m2ts' at offset '1048576'"
+)
+
+
+async def test_read_errors_count_against_the_title_being_saved_and_only_the_first_warns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER)
+    state = ParserState()
+    parser = _parser(state, eligible=[0])
+    await parser.feed('PRGC:5017,0,"Saving to MKV file"')
+    for _ in range(3):
+        await parser.feed(_READ_ERROR)
+    await parser.feed('MSG:5003,0,2,"Failed to save title 0 to file x","Failed to save title %1 to file %2","0","x"')
+    title = state.titles[0]
+    assert (title.read_errors, title.first_read_error) == (3, _READ_ERROR_TEXT)
+    assert title.fail_reason == "Failed to save title 0 to file x"
+    _assert_one(caplog, logging.WARNING, f"makemkvcon read error on title 0: {_READ_ERROR_TEXT}")
+    assert state.diagnostics == ["Failed to save title 0 to file x"]
+
+
+async def test_a_read_error_before_any_title_is_saved_belongs_to_no_title(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER)
+    state = ParserState()
+    assert await _parser(state)._apply_msg(_READ_ERROR) is True
+    assert state == ParserState()
+    assert [r.levelno for r in caplog.records] == [logging.DEBUG]
+
+
+def test_a_read_error_without_rendered_text_keeps_the_raw_line() -> None:
+    state = ParserState(current_title=1)
+    _parser(state)._record_read_error("MSG:2003,0,0")
+    assert state.titles[1].first_read_error == "MSG:2003,0,0"
+    assert state.titles[1].read_errors == 1
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        (0, "Failed"),
+        (1, "Failed (1 disc read error, first: E1)"),
+        (312, "Failed (312 disc read errors, first: E1)"),
+    ],
+)
+def test_with_read_errors_appends_the_count_and_the_first_error(count: int, expected: str) -> None:
+    title = makemkv_stream._TitleState(read_errors=count, first_read_error="E1" if count else None)
+    assert title.with_read_errors("Failed") == expected
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        (r'MSG:1,0,1,"say \"hi\"","%1"', 'say "hi"'),
+        ("MSG:1,0,0", None),
+    ],
+)
+def test_rendered_text_is_the_first_quoted_argument_unescaped(line: str, expected: str | None) -> None:
+    assert makemkv_stream._rendered_text(line) == expected

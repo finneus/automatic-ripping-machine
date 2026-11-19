@@ -1183,6 +1183,24 @@ def test_failed_titles_prefers_the_captured_reason_over_the_generic_error():
     assert out == {4: RipResult(ok=False, error="read error")}
 
 
+def _with_read_errors(reason: str | None, count: int) -> makemkv_stream.ParserState:
+    state = _state_with_reasons(t0=reason)
+    state.titles[0].read_errors, state.titles[0].first_read_error = count, "Error 'x' occurred while reading"
+    return state
+
+
+def test_failed_titles_appends_the_read_errors_to_the_captured_reason():
+    out = makemkv_rip._failed_titles(_with_read_errors("Failed to save title 0", 2), [0], {})
+    expected = "Failed to save title 0 (2 disc read errors, first: Error 'x' occurred while reading)"
+    assert out == {0: RipResult(ok=False, error=expected)}
+
+
+def test_failed_titles_appends_the_read_errors_to_the_generic_error():
+    out = makemkv_rip._failed_titles(_with_read_errors(None, 1), [0], {})
+    expected = f"{_NO_MKV} (1 disc read error, first: Error 'x' occurred while reading)"
+    assert out == {0: RipResult(ok=False, error=expected)}
+
+
 def test_failed_titles_orders_captured_reasons_before_generic_failures():
     ripped = {1: RipResult(ok=True)}
     state = _state_with_reasons(t9="bad", t3="worse")

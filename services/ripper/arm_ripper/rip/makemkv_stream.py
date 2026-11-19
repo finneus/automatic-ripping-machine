@@ -12,6 +12,7 @@ from typing import Any
 from arm_ripper.rip.makemkv_robot import (
     PRGT_RE,
     QUOTED_ARG_RE,
+    READ_ERROR_CODE,
     TITLE_FAIL_CODE,
     extract_title_index_from_msg5003,
     parse_diagnostic_msg,
@@ -58,6 +59,15 @@ class _TitleState:
     fail_reason: str | None = None
     started_emitted: bool = False
     done_emitted: bool = False
+    read_errors: int = 0
+    first_read_error: str | None = None
+
+    def with_read_errors(self, reason: str) -> str:
+        """`reason`, followed by how many disc read errors (MSG:2003) the title hit and the first one, if any."""
+        if not self.read_errors:
+            return reason
+        noun = "error" if self.read_errors == 1 else "errors"
+        return f"{reason} ({self.read_errors} disc read {noun}, first: {self.first_read_error})"
 
 
 @dataclass
@@ -121,6 +131,12 @@ async def _emit_title_done(
     ts.done_emitted = True
     if on_title_done is not None:
         await _call_safely("title done", on_title_done, title_idx)
+
+
+def _rendered_text(line: str) -> str | None:
+    """The first quoted argument of a MSG line, the message as MakeMKV rendered it, unescaped; None if it has none."""
+    rendered = next(iter(QUOTED_ARG_RE.finditer(line)), None)
+    return rendered.group(1).replace('\\"', '"') if rendered else None
 
 
 class _LineParser:
@@ -262,6 +278,8 @@ class _LineParser:
                 code, args = parsed
                 if code == TITLE_FAIL_CODE:
                     self._record_title_failure(line, args)
+                elif code == READ_ERROR_CODE:
+                    self._record_read_error(line)
             logger.debug("makemkvcon: %s", line)
             return True
         return False
@@ -269,8 +287,7 @@ class _LineParser:
     def _record_title_failure(self, line: str, args: list[str]) -> None:
         """Store a MSG:5003 failure reason on its title, or warn when the title index can't be found."""
         fail_idx = extract_title_index_from_msg5003(args)
-        rendered = next(iter(QUOTED_ARG_RE.finditer(line)), None)
-        reason = rendered.group(1).replace('\\"', '"') if rendered else "save failed"
+        reason = _rendered_text(line) or "save failed"
         if fail_idx is not None:
             ts = self._state.titles.setdefault(fail_idx, _TitleState())
             ts.fail_reason = reason
@@ -278,6 +295,20 @@ class _LineParser:
             # Unattributable fail — append to overall diagnostics
             # so the disc-level error captures it.
             logger.warning("MSG:5003 without parseable title index: %s", line)
+
+    def _record_read_error(self, line: str) -> None:
+        """Count a MSG:2003 read error against the title being saved, logging the first one per title at warning.
+
+        A read error before any title is being saved (the scan, the analyse phase) belongs to no title and stays at
+        debug only."""
+        title_idx = self._state.current_title
+        if title_idx is None:
+            return
+        ts = self._state.titles.setdefault(title_idx, _TitleState())
+        ts.read_errors += 1
+        if ts.read_errors == 1:
+            ts.first_read_error = _rendered_text(line) or line
+            logger.warning("makemkvcon read error on title %d: %s", title_idx, ts.first_read_error)
 
 
 async def stream_output(
