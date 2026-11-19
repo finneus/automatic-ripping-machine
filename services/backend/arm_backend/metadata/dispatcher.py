@@ -2,7 +2,7 @@ import asyncio
 import contextvars
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -91,6 +91,24 @@ def _search_candidates(
     if label_title and label_enabled:
         candidates.append((label_title, label_year, False))
     return candidates
+
+
+def _main_feature_seconds(scan: ScanResult) -> int | None:
+    """The length of the disc's longest title, the one a movie search can check runtimes against; None when the
+    scan lists no title with a length."""
+    return max((t.duration_seconds for t in scan.titles if t.duration_seconds), default=None)
+
+
+def _title_search(
+    source: OnlineSource, cfg: Config, kind: Kind, title: str, year: int | None, runtime_seconds: int | None
+) -> Awaitable[MetadataResult | None] | None:
+    """The source's title search: for a movie with a known main-feature length, the runtime-aware
+    `search_title_near` when the source has it, else `search_title`; None when the source has neither."""
+    near = capability(source, "search_title_near") if kind == "movie" and runtime_seconds else None
+    if near is not None:
+        return near(cfg, title, year, runtime_seconds)  # type: ignore[no-any-return]
+    search = capability(source, "search_title")
+    return None if search is None else search(cfg, kind, title, year)
 
 
 def _dedupe_casefold(candidates: list[_Candidate]) -> list[_Candidate]:
@@ -186,11 +204,14 @@ class MetadataDispatcher:
             return hit
 
         unique = _dedupe_casefold(_search_candidates(scan, cfg, title_hint, title_hint_is_tv))
+        runtime = _main_feature_seconds(scan)
         if prefer_tv:
-            return await self._search_tv_then_movie(unique, cfg)
-        return await self._search_in_candidate_order(unique, cfg)
+            return await self._search_tv_then_movie(unique, cfg, runtime)
+        return await self._search_in_candidate_order(unique, cfg, runtime)
 
-    async def _search_tv_then_movie(self, candidates: list[_Candidate], cfg: Config) -> MetadataResult | None:
+    async def _search_tv_then_movie(
+        self, candidates: list[_Candidate], cfg: Config, runtime: int | None = None
+    ) -> MetadataResult | None:
         """Search TV for every candidate before any movie; the first hit wins."""
         # The disc itself is TV-shaped (arm_common.disc_shape): search TV for
         # every candidate before any movie, so one candidate's movie
@@ -198,17 +219,19 @@ class MetadataDispatcher:
         # series.
         for kind in ("tv", "movie"):
             for title, year, _ in candidates:
-                hit = await self._search_kind(title, year, cfg, kind)
+                hit = await self._search_kind(title, year, cfg, kind, runtime)
                 if hit is not None:
                     return hit
         return None
 
-    async def _search_in_candidate_order(self, candidates: list[_Candidate], cfg: Config) -> MetadataResult | None:
+    async def _search_in_candidate_order(
+        self, candidates: list[_Candidate], cfg: Config, runtime: int | None = None
+    ) -> MetadataResult | None:
         """Search each candidate in its own kind order; the first hit wins."""
         for title, year, tv_first in candidates:
             kinds: tuple[Kind, Kind] = ("tv", "movie") if tv_first else ("movie", "tv")
             for kind in kinds:
-                hit = await self._search_kind(title, year, cfg, kind)
+                hit = await self._search_kind(title, year, cfg, kind, runtime)
                 if hit is not None:
                     return hit
         return None
@@ -231,13 +254,16 @@ class MetadataDispatcher:
                 return hit
         return None
 
-    async def _search_kind(self, title: str, year: int | None, cfg: Config, kind: Kind) -> MetadataResult | None:
-        """One kind: every enabled source for it, in the operator's order."""
+    async def _search_kind(
+        self, title: str, year: int | None, cfg: Config, kind: Kind, runtime: int | None = None
+    ) -> MetadataResult | None:
+        """One kind: every enabled source for it, in the operator's order. `runtime` (the disc's main-feature
+        length) lets a source that can break a same-title movie tie by runtime do so."""
         for source in self._walk(cfg, kind, "title", title):
-            search = capability(source, "search_title")
-            if search is None:
+            call = _title_search(source, cfg, kind, title, year, runtime)
+            if call is None:
                 continue
-            hit = await self._call(source.id, search(cfg, kind, title, year), step="title", kind=kind, detail=title)
+            hit = await self._call(source.id, call, step="title", kind=kind, detail=title)
             if hit is not None:
                 return hit
         return None

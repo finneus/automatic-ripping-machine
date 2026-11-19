@@ -7,6 +7,7 @@ import httpx
 
 from arm_backend.config import settings
 from arm_backend.metadata.base import LookupError, LookupTimeout, MetadataResult
+from arm_backend.metadata.runtime_match import runtime_choice, same_title_pool
 from arm_backend.metadata.years import year_from
 
 logger = logging.getLogger("arm_backend.metadata.tmdb")
@@ -78,11 +79,58 @@ class TMDBClient:
         year_val = year_from(release)
         return MetadataResult(title=title_val, year=year_val, kind=kind, payload=top)
 
-    async def search_movie(self, title: str, year: int | None = None) -> MetadataResult:
+    @staticmethod
+    def _movie_params(title: str, year: int | None) -> dict[str, Any]:
+        """`/search/movie` query parameters: the title, and the year when one is known."""
         params: dict[str, Any] = {"query": title}
         if year is not None:
             params["year"] = year
-        return await self._search("movie", params, kind="movie")
+        return params
+
+    async def search_movie(self, title: str, year: int | None = None) -> MetadataResult:
+        return await self._search("movie", self._movie_params(title, year), kind="movie")
+
+    async def search_movie_near(self, title: str, year: int | None, runtime_seconds: int) -> MetadataResult:
+        """`search_movie`, except that among hits sharing the title (a remake and its original) the one whose
+        runtime fits the disc's main feature (`runtime_seconds`) clearly better replaces TMDb's first hit
+        (`runtime_match`)."""
+        results = await self._get_results("movie", self._movie_params(title, year))
+        if not results:
+            raise LookupError("tmdb movie no results")
+        chosen = await self._closest_by_runtime(same_title_pool(results, title), runtime_seconds)
+        parsed = self._parse_one(chosen, "movie")
+        if parsed is None:
+            raise LookupError("tmdb movie top result missing title")
+        return parsed
+
+    async def _closest_by_runtime(self, pool: list[dict[str, Any]], runtime_seconds: int) -> dict[str, Any]:
+        """The pool hit `runtime_choice` picks; a pool of one is TMDb's first hit with no lookups."""
+        if len(pool) < 2:
+            return pool[0]
+        runtimes = await asyncio.gather(*(self._runtime_minutes(hit.get("id")) for hit in pool))
+        chosen = pool[runtime_choice(runtimes, runtime_seconds)]
+        if chosen is not pool[0]:
+            logger.info(
+                "tmdb: %r (%s) fits the disc's %d min main feature better than the first hit %r (%s)",
+                chosen.get("title"),
+                chosen.get("release_date"),
+                runtime_seconds // 60,
+                pool[0].get("title"),
+                pool[0].get("release_date"),
+            )
+        return chosen
+
+    async def _runtime_minutes(self, tmdb_id: int | str | None) -> int | None:
+        """A movie's listed runtime in minutes, or None when it has no id, lists none, or the lookup fails: the
+        runtime only breaks a tie, so a failed lookup must not fail the search."""
+        if tmdb_id is None:
+            return None
+        try:
+            body = await self.fetch_detail(tmdb_id, "movie")
+        except LookupError:
+            return None
+        runtime = body.get("runtime")
+        return runtime if isinstance(runtime, int) and runtime > 0 else None
 
     async def search_tv(self, title: str) -> MetadataResult:
         return await self._search("tv", {"query": title}, kind="tv")
@@ -90,10 +138,7 @@ class TMDBClient:
     async def search_movie_candidates(
         self, title: str, year: int | None = None, limit: int = 10
     ) -> list[MetadataResult]:
-        params: dict[str, Any] = {"query": title}
-        if year is not None:
-            params["year"] = year
-        return await self._search_candidates("movie", params, kind="movie", limit=limit)
+        return await self._search_candidates("movie", self._movie_params(title, year), kind="movie", limit=limit)
 
     async def search_tv_candidates(self, title: str, limit: int = 10) -> list[MetadataResult]:
         return await self._search_candidates("tv", {"query": title}, kind="tv", limit=limit)

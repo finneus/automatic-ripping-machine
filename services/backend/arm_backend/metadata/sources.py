@@ -48,6 +48,8 @@ class OnlineSource(Protocol):
     # Capabilities are optional methods; `capability()` finds them. Each takes
     # `cfg` first. Names and signatures:
     #   search_title(cfg, kind, title, year) -> MetadataResult | None
+    #   search_title_near(cfg, title, year, runtime_seconds) -> MetadataResult | None
+    #     (movies only: `search_title` that breaks a same-title tie by the disc's main-feature length)
     #   search_candidates(cfg, kind, title, limit=10) -> list[MetadataResult]
     #   lookup_imdb(cfg, imdb_id) -> MetadataResult | None
     #   details(cfg, kind, provider_id) -> MetadataResult
@@ -99,6 +101,11 @@ class TmdbSource(_Adapter):
     async def search_title(self, cfg: Config, kind: Kind, title: str, year: int | None) -> MetadataResult | None:
         client = self._client(cfg)
         return await (client.search_tv(title) if kind == "tv" else client.search_movie(title, year))
+
+    async def search_title_near(
+        self, cfg: Config, title: str, year: int | None, runtime_seconds: int
+    ) -> MetadataResult | None:
+        return await self._client(cfg).search_movie_near(title, year, runtime_seconds)
 
     async def search_candidates(self, cfg: Config, kind: Kind, title: str, limit: int = 10) -> list[MetadataResult]:
         client = self._client(cfg)
