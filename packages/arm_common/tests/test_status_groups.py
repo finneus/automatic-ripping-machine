@@ -62,6 +62,7 @@ def test_apply_groups() -> None:
     assert APPLY_OK_JOB_STATUSES == {
         JobStatus.IDENTIFIED,
         JobStatus.AWAITING_REVIEW,
+        JobStatus.RIPPING,
         JobStatus.RIPPED,
         JobStatus.RIPPED_PARTIAL,
     }

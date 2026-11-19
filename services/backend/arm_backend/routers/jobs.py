@@ -777,7 +777,10 @@ async def apply_session(
     db: AsyncSession = Depends(get_session),
     hub: WSHub = Depends(get_hub),
 ) -> ApplySessionResponse:
-    job = (await db.execute(select(Job).where(col(Job.id) == job_id))).scalar_one_or_none()
+    # FOR UPDATE: an apply to a ripping job parks for rip-complete to fan out.
+    # rip-complete's status write waits for this lock, so it drains only after
+    # the parked row is committed (or this apply sees the job already ripped).
+    job = (await db.execute(select(Job).where(col(Job.id) == job_id).with_for_update())).scalar_one_or_none()
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown job_id: {job_id}")
 

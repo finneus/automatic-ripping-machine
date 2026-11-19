@@ -670,7 +670,7 @@ def test_apply_to_unidentified_job_creates_waiting_identify(signing_key: bytes, 
 
 def test_apply_rejects_job_in_bad_status(signing_key: bytes, tmp_path: Path) -> None:
     db = FakeSession()
-    _seed(db, job_status=JobStatus.RIPPING)
+    _seed(db, job_status=JobStatus.FAILED)
     app, token = _make_app(signing_key, db, tmp_path)
     with TestClient(app) as client:
         r = client.post(

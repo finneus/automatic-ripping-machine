@@ -88,7 +88,7 @@ describe('JobHeaderActions', () => {
 	});
 
 	it('hides the apply button when the job cannot be applied', () => {
-		render(createJob({ status: 'ripping' }));
+		render(createJob({ status: 'created' }));
 		expect(screen.queryByTestId('apply-open')).toBeNull();
 	});
 
