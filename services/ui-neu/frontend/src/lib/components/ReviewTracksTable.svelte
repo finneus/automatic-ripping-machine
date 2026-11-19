@@ -4,6 +4,7 @@
 	import { trackToRow, scanTitleToRow, nonEpisode } from '$lib/utils/review-rows';
 	import { formatTrackDuration } from '$lib/utils/format';
 	import { parseEpisodeNumber } from '$lib/utils/track-edit';
+	import { INCLUDE_TRACK_HINT } from '$lib/utils/track-fields';
 	import TrackTitleSearch from './TrackTitleSearch.svelte';
 	import { isAdmin } from '$lib/stores/auth';
 	interface Props {
@@ -142,7 +143,7 @@
 											aria-label="Include track {row.index}"
 											checked={!row.excluded}
 											onchange={(e) => handleTrackFieldUpdate(row.trackId!, 'excluded', !e.currentTarget.checked)}
-											title="Include this track in transcode output (the disc still rips in full)"
+											title={INCLUDE_TRACK_HINT}
 										/>
 									{:else if row.trackId}
 										<span class="review-tracks-table-faint">{row.excluded ? 'Excluded' : 'Included'}</span>

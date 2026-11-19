@@ -4,6 +4,7 @@
 	// the data and the actions.
 	import { type EpisodeRow } from './episodeModel';
 	import { SOURCE_LABEL } from '$lib/utils/episode-sources';
+	import { INCLUDE_TRACK_HINT } from '$lib/utils/track-fields';
 	import SeasonSelect from './SeasonSelect.svelte';
 
 	interface FileName {
@@ -136,7 +137,7 @@
 			aria-label="Include {row.ref}"
 			checked={!row.excluded}
 			onchange={(e) => onexclude?.(row.trackId, !e.currentTarget.checked)}
-			title="Include this track in transcode output (the disc still rips in full)"
+			title={INCLUDE_TRACK_HINT}
 		/>
 	{:else}
 		<span class="episode-rows-muted">{row.excluded ? 'Excluded' : 'Included'}</span>

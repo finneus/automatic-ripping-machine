@@ -51,7 +51,9 @@ async def rip_all(
       DONE/FAILED based on whether MakeMKV produced their file. Titles
       below `min_length_seconds` are skipped by MakeMKV; if the user
       requested one of those, we report FAILED with a clear reason
-      rather than silently ignoring it.
+      rather than silently ignoring it. When the operator kept exactly
+      one eligible title, the invocation rips only that title; the
+      excluded titles are not read and get no callbacks.
     - Any disc whose tracks are all DISC_BACKUP: one `makemkvcon backup --decrypt` (`rip_backup`) for the first track.
     - CD: mark all tracks IN_PROGRESS, run abcde once for the whole disc,
       then emit DONE/FAILED per track from the bulk result.

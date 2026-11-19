@@ -87,7 +87,7 @@ The **checkpoint unit**. Every title on a DVD/BD or every song on a CD is a trac
 - `title`, `year`, `imdb_id`, `poster_url` (nullable — per-track identity for multi-title discs such as TV box sets; null means inherit the job's value)
 - `season`, `episode_number`, `episode_number_end`, `episode_name` (nullable — per-track season and episode; `episode_number_end` is the last episode for a title spanning two consecutive episodes)
 - `identity_provenance` (jsonb, nullable — `{attribute: source_id}` for the fields the identity resolver set)
-- `excluded` (bool, default false — omits the title from transcode output; the disc still rips whole)
+- `excluded` (bool, default false — omits the title from transcode output; the disc still rips whole, except when exactly one eligible title is kept, which the ripper then rips on its own)
 - `custom_filename` (text, nullable — overrides the template-rendered name for this track)
 - `expected_duration_seconds` (int, nullable)
 - `status` (enum: queued | in_progress | done | failed)

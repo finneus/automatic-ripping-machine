@@ -3,7 +3,10 @@
 `rip_disc` shells out to `makemkvcon mkv ... all <outdir>` exactly once
 per disc — the v2 pattern. The drive stays open for the entire rip, so
 the between-titles SCSI NOT_READY / USB-autosuspend gap that plagued
-the per-title implementation simply doesn't exist anymore.
+the per-title implementation simply doesn't exist anymore. When the
+operator kept exactly one title, that one invocation names the title
+(`makemkvcon mkv ... <title id> <outdir>`) instead of `all`, so the
+titles nobody wanted are never read off the disc.
 
 Per-title attribution is reconstructed from the robot stream:
   - PRGC:5017 ("Saving to MKV file") lines fire once at the start of
@@ -107,6 +110,36 @@ def _mkv_all_command(device_path: str, output_dir: Path, minlength_seconds: int)
     ]
 
 
+def _mkv_title_command(device_path: str, output_dir: Path, title_index: int) -> list[str]:
+    """The single `makemkvcon mkv` argv that rips just `title_index`, the title id the scan's `info` reported.
+
+    MakeMKV numbers titles after its minimum-length filter, so this run passes no `--minlength`: it filters under the
+    same MakeMKV setting the scan's `info` ran under, and the id names the title the scan saw."""
+    return [
+        "makemkvcon",
+        "mkv",
+        "--robot",
+        "--progress=-stdout",
+        makemkv_source_url(device_path),
+        str(title_index),
+        str(output_dir),
+    ]
+
+
+def _mkv_command(device_path: str, output_dir: Path, minlength_seconds: int, title_index: int | None) -> list[str]:
+    """The argv for this rip: every title of at least `minlength_seconds`, or only `title_index` when one is given."""
+    if title_index is None:
+        return _mkv_all_command(device_path, output_dir, minlength_seconds)
+    return _mkv_title_command(device_path, output_dir, title_index)
+
+
+def _rip_scope(minlength_seconds: int, title_index: int | None) -> str:
+    """What one rip reads off the disc, for its log line."""
+    if title_index is None:
+        return f"all minlength={minlength_seconds}s"
+    return f"title {title_index}"
+
+
 async def _attribute_outputs(output_dir: Path, eligible: list[int], hash_outputs: bool) -> dict[int, RipResult]:
     """Pair each eligible source index with the output file in its rip position.
 
@@ -179,6 +212,7 @@ async def rip_disc(
     on_title_done: OnTitleDone | None = None,
     hash_outputs: bool = True,
     stop: asyncio.Event | None = None,
+    title_index: int | None = None,
 ) -> RipDiscResult:
     """Rip every title with duration ≥ `minlength_seconds` from the disc
     in `device_path` to `output_dir`. Single makemkvcon invocation; the
@@ -199,6 +233,11 @@ async def rip_disc(
     `stop`, when set mid-rip, kills makemkvcon and returns STOPPED_ERROR as
     the overall error (see run_makemkvcon).
 
+    `title_index`, when given, rips only that title (its scan `info` title
+    id) instead of `all`; `minlength_seconds` then plays no part (see
+    `_mkv_title_command`). Pass `eligible_source_indexes=[title_index]`
+    with it: MakeMKV writes one file, at output position 0.
+
     `hash_outputs=False` leaves `sha256` unset on every result: the
     dispatcher hashes each title itself as soon as it is written, so the
     pass overlaps the rip instead of re-reading every file after it.
@@ -210,12 +249,12 @@ async def rip_disc(
     and are FAILED.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    cmd = _mkv_all_command(device_path, output_dir, minlength_seconds)
+    cmd = _mkv_command(device_path, output_dir, minlength_seconds, title_index)
     logger.info(
-        "makemkvcon mkv all device=%s outdir=%s minlength=%ds",
+        "makemkvcon mkv %s device=%s outdir=%s",
+        _rip_scope(minlength_seconds, title_index),
         device_path,
         output_dir,
-        minlength_seconds,
     )
 
     state = ParserState()

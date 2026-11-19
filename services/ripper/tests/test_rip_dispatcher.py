@@ -39,9 +39,11 @@ from arm_ripper.rip.optical_rip import (
     _finished_file,
     _first_eligible_track,
     _index_tracks,
+    _kept_tracks,
     _meets_min_length,
     _no_output_error,
     _scan_duration,
+    _single_title,
 )
 from arm_ripper.rip.result import RipResult
 
@@ -51,6 +53,8 @@ def _track(
     source_ref: str | None = None,
     duration_seconds: int | None = 1800,
     expected_duration_seconds: int | None = None,
+    *,
+    excluded: bool = False,
 ) -> TrackView:
     """Default duration is 30 min so the dispatcher's eligibility
     filter (`duration_seconds >= min_length_seconds`) treats it as
@@ -69,6 +73,7 @@ def _track(
         expected_duration_seconds=expected_duration_seconds,
         attempts=0,
         last_error=None,
+        excluded=excluded,
     )
 
 
@@ -230,8 +235,10 @@ def _stub_rip_disc(
         on_title_done: Any | None = None,
         hash_outputs: bool = True,
         stop: Any | None = None,
+        title_index: int | None = None,
     ) -> RipDiscResult:
         if captured is not None:
+            captured["title_index"] = title_index
             captured["hash_outputs"] = hash_outputs
             captured["device_path"] = device_path
             captured["output_dir"] = output_dir
@@ -1875,3 +1882,146 @@ def test_effective_disc_type_keeps_the_scan_type_for_mixed_kinds() -> None:
 
 def test_effective_disc_type_keeps_the_scan_type_without_tracks() -> None:
     assert _effective_disc_type(DiscType.DVD, []) == DiscType.DVD
+
+
+# --- one kept title is ripped on its own -------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("excluded", "skipped", "expected"),
+    [
+        ({0, 2}, set(), 1),
+        (set(), set(), None),
+        ({0, 1, 2}, set(), None),
+        ({2}, set(), None),
+        (set(), {0, 2}, 1),
+        ({2}, {0}, 1),
+        ({1}, {0, 2}, None),
+    ],
+    ids=[
+        "one-kept",
+        "all-kept",
+        "none-kept",
+        "two-kept",
+        "resume-one-left",
+        "resume-one-left-one-excluded",
+        "resume-nothing-left",
+    ],
+)
+def test_single_title_is_the_one_kept_unsettled_eligible_title(excluded, skipped, expected) -> None:
+    track_by_index = {idx: _track(idx, excluded=idx in excluded) for idx in range(3)}
+
+    assert _single_title(track_by_index, [0, 1, 2], skipped) == expected
+
+
+def test_single_title_ignores_a_kept_title_below_minlength() -> None:
+    """A kept title MakeMKV skips as too short is not eligible, so it never
+    stops the one eligible kept title from being ripped on its own."""
+    track_by_index = {0: _track(0), 1: _track(1, duration_seconds=60), 2: _track(2, excluded=True)}
+
+    assert _single_title(track_by_index, [0, 2], set()) == 0
+
+
+def test_kept_tracks_drops_the_excluded_tracks() -> None:
+    track_by_index = {0: _track(0, excluded=True), 1: _track(1), 2: _track(2, excluded=True)}
+
+    assert list(_kept_tracks(track_by_index)) == [1]
+
+
+async def _rip_recording(
+    tmp_path: Path, tracks: list[TrackView]
+) -> tuple[list[str], list[tuple[str, bool, str | None]]]:
+    """rip_all a Blu-ray with a 600 s minlength; the ids started and the (id, ok, error) reported done."""
+    started: list[str] = []
+    done: list[tuple[str, bool, str | None]] = []
+
+    async def on_start(track: TrackView) -> None:
+        started.append(track.id)
+
+    async def on_done(track: TrackView, result: RipResult) -> None:
+        done.append((track.id, result.ok, result.error))
+
+    await rip_all(
+        disc_type=DiscType.BLURAY,
+        device_path="/dev/sr0",
+        tracks=tracks,
+        output_dir=tmp_path,
+        on_track_start=on_start,
+        on_track_done=on_done,
+        min_length_seconds=600,
+    )
+    return started, done
+
+
+async def test_rip_all_rips_the_one_kept_title_on_its_own(monkeypatch, tmp_path):
+    """Review kept only title 1 of three same-length titles (a main
+    feature and two copies): only title 1 is read off the disc, and the
+    excluded copies get no callbacks, so they stay queued."""
+    fake_result = RipDiscResult(
+        overall_error=None,
+        titles={1: RipResult(ok=True, output_path=tmp_path / "Disc_t01.mkv", size_bytes=10)},
+    )
+    captured: dict[str, Any] = {}
+    _stub_rip_disc(monkeypatch, fake_result, captured=captured, fire_per_title_start=False)
+
+    started, done = await _rip_recording(tmp_path, [_track(0, excluded=True), _track(1), _track(2, excluded=True)])
+
+    assert captured["title_index"] == 1
+    assert captured["eligible_source_indexes"] == [1]
+    assert started == ["trk_1"]
+    assert done == [("trk_1", True, None)]
+
+
+async def test_rip_all_names_the_main_feature_when_only_it_was_selected(monkeypatch, tmp_path):
+    """Without the review hold, a main-feature preset hands over just the
+    chosen title. `mkv all` would rip the disc's earlier titles too and
+    pair the first file with it; naming the title rips exactly that one."""
+    fake_result = RipDiscResult(
+        overall_error=None,
+        titles={3: RipResult(ok=True, output_path=tmp_path / "Disc_t03.mkv", size_bytes=10)},
+    )
+    captured: dict[str, Any] = {}
+    _stub_rip_disc(monkeypatch, fake_result, captured=captured, fire_per_title_start=False)
+
+    _started, done = await _rip_recording(tmp_path, [_track(3)])
+
+    assert captured["title_index"] == 3
+    assert captured["eligible_source_indexes"] == [3]
+    assert done == [("trk_3", True, None)]
+
+
+async def test_rip_all_rips_all_titles_when_two_are_kept(monkeypatch, tmp_path):
+    """makemkvcon names one title or `all`; two kept titles still rip `all`,
+    the excluded one included, as before."""
+    fake_result = RipDiscResult(overall_error=None, titles={})
+    captured: dict[str, Any] = {}
+    _stub_rip_disc(monkeypatch, fake_result, captured=captured)
+
+    await _rip_recording(tmp_path, [_track(0), _track(1), _track(2, excluded=True)])
+
+    assert captured["title_index"] is None
+    assert captured["eligible_source_indexes"] == [0, 1, 2]
+
+
+async def test_rip_all_single_title_still_fails_a_kept_title_below_minlength(monkeypatch, tmp_path):
+    """A kept title too short for minlength fails with its reason as before;
+    only the excluded title goes without an outcome."""
+    fake_result = RipDiscResult(
+        overall_error=None,
+        titles={0: RipResult(ok=True, output_path=tmp_path / "Disc_t00.mkv", size_bytes=10)},
+    )
+    captured: dict[str, Any] = {}
+    _stub_rip_disc(monkeypatch, fake_result, captured=captured, fire_per_title_start=False)
+
+    started, done = await _rip_recording(
+        tmp_path, [_track(0), _track(1, duration_seconds=60), _track(2, excluded=True)]
+    )
+
+    assert captured["title_index"] == 0
+    assert started == ["trk_0", "trk_1"]
+    # The good file is reported once hashed, so after the short title's failure.
+    outcomes = {track_id: (ok, error) for track_id, ok, error in done}
+    assert set(outcomes) == {"trk_0", "trk_1"}
+    assert outcomes["trk_0"] == (True, None)
+    assert outcomes["trk_1"][0] is False
+    assert "below minlength=600s" in (outcomes["trk_1"][1] or "")

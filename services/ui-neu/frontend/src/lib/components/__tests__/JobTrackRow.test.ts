@@ -262,6 +262,15 @@ describe('JobTrackRow', () => {
 		expect(text(cell('Rip'))).toContain('Failed');
 	});
 
+	it('shows an excluded track the rip never read as not ripped, and its queued badge before the rip', () => {
+		const skipped = createTrack({ id: 'trk_9', index: 9, excluded: true, status: 'queued', attempts: 0 });
+		renderRow(skipped, { job: { status: 'ripped' } });
+		expect(text(cell('Rip'))).toBe('not ripped');
+		cleanup();
+		renderRow(skipped, { job: { status: 'ripping' } });
+		expect(text(cell('Rip'))).not.toContain('not ripped');
+	});
+
 	it('shows transcode status with fps only while in progress, else a dash', () => {
 		renderRow(pilot());
 		expect(text(cell('Transcode'))).toContain('12.5 fps (avg 10.0)');

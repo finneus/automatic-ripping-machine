@@ -3,7 +3,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TrackTitleSearch from '$lib/components/TrackTitleSearch.svelte';
 	import { formatFps } from '$lib/utils/fps';
-	import { trackKindLabel, trackSizeLabel } from '$lib/utils/track-fields';
+	import { INCLUDE_TRACK_HINT, isUnrippedExclusion, trackKindLabel, trackSizeLabel } from '$lib/utils/track-fields';
 	import { formatTrackLength } from '$lib/utils/format';
 	import { isAdmin } from '$lib/stores/auth';
 	import type { JobView, NamingPreviewItem, TrackView } from '$lib/types/api.gen';
@@ -126,7 +126,7 @@
 				type="checkbox"
 				checked={!track.excluded}
 				onchange={(e) => onexcludedchange(track.id, !(e.currentTarget as HTMLInputElement).checked)}
-				title="Include this track in transcode output (the disc still rips in full)"
+				title={INCLUDE_TRACK_HINT}
 				class="job-detail-track-checkbox"
 			/>
 		{:else}
@@ -135,12 +135,16 @@
 	</td>
 	<!-- Rip outcome -->
 	<td class="table-cell" data-label="Rip">
-		<span class="flex items-center gap-1">
-			<StatusBadge status={track.status} />
-			{#if track.attempts > 1}
-				<span class="job-detail-track-attempts" title="Rip attempts">x{track.attempts}</span>
-			{/if}
-		</span>
+		{#if isUnrippedExclusion(track, job.status)}
+			<span class="job-detail-track-faint" title="Excluded, so the rip did not read it">not ripped</span>
+		{:else}
+			<span class="flex items-center gap-1">
+				<StatusBadge status={track.status} />
+				{#if track.attempts > 1}
+					<span class="job-detail-track-attempts" title="Rip attempts">x{track.attempts}</span>
+				{/if}
+			</span>
+		{/if}
 	</td>
 	<!-- Transcode outcome (— when no transcode task yet) -->
 	<td class="table-cell" data-label="Transcode">
