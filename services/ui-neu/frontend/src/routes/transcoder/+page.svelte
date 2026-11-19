@@ -92,7 +92,8 @@
 			<!-- Runtime-disabled (capable, but turned off in Settings > Transcoding):
 		     content stays visible - drain semantics need the held queue visible. -->
 			<div class="alert alert-warning" role="status" data-testid="transcode-runtime-disabled-banner">
-				Transcoding is disabled. Queued tasks are held and resume when it is re-enabled.
+				Transcoding is disabled. Queued encode tasks are held and resume when it is re-enabled; passthrough sessions
+				(plain moves into the library) still run.
 			</div>
 		{/if}
 

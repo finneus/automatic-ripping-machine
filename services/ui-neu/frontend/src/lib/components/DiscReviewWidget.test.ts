@@ -292,7 +292,7 @@ describe('DiscReviewWidget', () => {
 		it('post-rip job shows Apply session as primary and hides Start rip', async () => {
 			mockFetchJob.mockResolvedValue(detail({ status: 'ripped', title: 'Test Movie', disc_type: 'bluray' }));
 			renderWidget({ status: 'ripped' });
-			await waitFor(() => expect(screen.getByText('Apply session & transcode')).toBeInTheDocument());
+			await waitFor(() => expect(screen.getByRole('button', { name: 'Apply session' })).toBeInTheDocument());
 			expect(screen.queryByText('Start rip')).not.toBeInTheDocument();
 		});
 

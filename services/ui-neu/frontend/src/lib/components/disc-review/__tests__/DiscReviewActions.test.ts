@@ -172,9 +172,9 @@ describe('DiscReviewActions: Apply session', () => {
 		expect(btn('Apply session')).toHaveClass('disc-review-widget-action-btn');
 	});
 
-	it('reads "Apply session & transcode" with the success class post-rip', () => {
+	it('reads "Apply session" with the success class post-rip', () => {
 		setup({ job: jobWith({ can_apply: true }), isPostRip: true });
-		const button = btn('Apply session & transcode');
+		const button = btn('Apply session');
 		expect(button).toHaveClass('disc-review-widget-success-btn');
 		expect(button).not.toHaveClass('disc-review-widget-action-btn');
 	});
