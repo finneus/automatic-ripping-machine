@@ -74,6 +74,20 @@ def _service_id(plugin_cls: Any) -> str | None:
     return str(scheme)
 
 
+def _targets_field(plugin_cls: Any) -> dict[str, Any] | None:
+    """The recipients field (Telegram chat ids, ntfy topics, ...) as a `to` query arg; None when the plugin has none.
+
+    Recipients are an optional `targets` path token, so the required-token list never shows them, and apprise only
+    offers them as a query arg through the `to` alias, which the alias filter drops. Without this field a Telegram
+    channel can only be saved without a chat id and fails with "There were not Telegram chat_ids to notify"."""
+    args = plugin_cls.template_args or {}
+    tokens = plugin_cls.template_tokens or {}
+    if args.get("to", {}).get("alias_of") != "targets" or "targets" not in tokens:
+        return None
+    label = str(tokens["targets"].get("name", "Targets"))
+    return {"key": "to", "label": f"{label} (comma-separated)", "type": "string", "private": False, "required": False}
+
+
 def _build_service_entry(plugin_cls: Any) -> dict[str, Any] | None:
     service_id = _service_id(plugin_cls)
     if not service_id:
@@ -86,6 +100,9 @@ def _build_service_entry(plugin_cls: Any) -> dict[str, Any] | None:
         for key, spec in (plugin_cls.template_args or {}).items()
         if key not in _BLOCKED_ARGS and "alias_of" not in spec
     ]
+    targets_field = _targets_field(plugin_cls)
+    if targets_field is not None:
+        advanced_fields.insert(0, targets_field)
     return {
         "id": service_id,
         "name": str(plugin_cls.service_name),
