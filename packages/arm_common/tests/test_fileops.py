@@ -376,3 +376,26 @@ def test_directory_fsync_failure_does_not_fail_a_finished_rename(
     with atomic_output(final) as tmp:
         tmp.write_bytes(b"x")
     assert final.read_bytes() == b"x"
+
+
+def test_copy_syncs_the_written_data_every_copy_sync_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unwritten gigabytes on a NAS destination made every child process the Backend spawned wait for their flush."""
+    src = tmp_path / "raw" / "t0.mkv"
+    src.parent.mkdir()
+    src.write_bytes(b"0123456789")
+    dst = tmp_path / "media" / "t0.mkv"
+    _no_rename(monkeypatch)
+    monkeypatch.setattr(fileops, "COPY_CHUNK_BYTES", 3)
+    monkeypatch.setattr(fileops, "COPY_SYNC_BYTES", 6)
+    on_disk: list[int] = []
+    real_fdatasync = os.fdatasync
+
+    def spy_fdatasync(fd: int) -> None:
+        on_disk.append(os.fstat(fd).st_size)
+        real_fdatasync(fd)
+
+    monkeypatch.setattr(fileops.os, "fdatasync", spy_fdatasync)
+    assert transcode_none(src, dst) == 10
+    # Chunks of 3: the sync is due after the second one, and the 4 bytes after it stay below the threshold.
+    assert on_disk == [6]
+    assert dst.read_bytes() == b"0123456789"

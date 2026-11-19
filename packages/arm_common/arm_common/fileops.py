@@ -16,6 +16,8 @@ share, and always with the stock compose layout's separate /raw and /media
 bind mounts). The copy goes to `<final>.arm-inprogress` and is fsynced and
 renamed into place only once complete, and it checks an optional `cancel` event between
 chunks: a cancelled copy removes its partial file and keeps the source.
+It also syncs its data every `COPY_SYNC_BYTES`, so the destination never has
+gigabytes waiting in the page cache (see the constant for why that froze the Backend).
 
 Progress: the rename is instant; the copy reports each chunk through an
 optional `on_bytes(n)` callback, which the in-process executor turns into
@@ -43,12 +45,18 @@ import threading
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import BinaryIO, Iterator
 
 logger = logging.getLogger("arm_common.fileops")
 
 INPROGRESS_SUFFIX = ".arm-inprogress"
 COPY_CHUNK_BYTES = 8 * 1024 * 1024
+# A cross-filesystem copy pushes its data to disk every COPY_SYNC_BYTES. Without it the page cache holds gigabytes
+# of the destination unwritten (a NAS share takes them slower than the local disk gives them), and closing any
+# descriptor of that file flushes all of them first. A process that spawns a child while the copy runs closes one:
+# the child's close-on-exec copy, on CIFS a synchronous flush of every dirty page before the child can exec. The
+# Backend spawns children (disk usage probe, bash notifications), so each spawn froze it for as long as that flush.
+COPY_SYNC_BYTES = 64 * 1024 * 1024
 
 
 def _fsync_file(path: Path) -> None:
@@ -102,11 +110,18 @@ def atomic_output(final_path: Path) -> Iterator[Path]:
     logger.info("atomic rename → %s", final_path)
 
 
+def _sync_written(fout: BinaryIO) -> None:
+    """Push what was written to `fout` so far to the disk (the data only, `fdatasync`)."""
+    fout.flush()
+    os.fdatasync(fout.fileno())
+
+
 def _copy_file(
     src: Path, dst: Path, cancel: threading.Event | None, on_bytes: Callable[[int], None] | None = None
 ) -> None:
-    """`shutil.copy2`, in chunks, checking `cancel` before each one."""
+    """`shutil.copy2`, in chunks, checking `cancel` before each one and syncing the data every `COPY_SYNC_BYTES`."""
     with src.open("rb") as fin, dst.open("wb") as fout:
+        unsynced = 0
         while True:
             if cancel is not None and cancel.is_set():
                 raise CopyCancelled(str(src))
@@ -114,6 +129,10 @@ def _copy_file(
             if not chunk:
                 break
             fout.write(chunk)
+            unsynced += len(chunk)
+            if unsynced >= COPY_SYNC_BYTES:
+                _sync_written(fout)
+                unsynced = 0
             if on_bytes is not None:
                 on_bytes(len(chunk))
     shutil.copystat(src, dst)
