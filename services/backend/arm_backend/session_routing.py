@@ -1,5 +1,5 @@
-"""Which session is routed to a job (the pending choice, the compatibility-gated drive default, then
-`session_routes`), and whether rip-complete may queue it unattended."""
+"""Which session is routed to a job (the pending choice, a session parked on it before the rip, the
+compatibility-gated drive default, then `session_routes`), and whether rip-complete may queue it unattended."""
 
 from __future__ import annotations
 
@@ -8,7 +8,17 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
-from arm_common import Config, DiscType, Drive, Job, MediaType, Session, SessionRoute
+from arm_common import (
+    Config,
+    DiscType,
+    Drive,
+    Job,
+    MediaType,
+    Session,
+    SessionApplication,
+    SessionApplicationStatus,
+    SessionRoute,
+)
 
 logger = logging.getLogger("arm_backend.session_routing")
 
@@ -38,6 +48,24 @@ def _pending_session_id(job: Job) -> str | None:
     return job.pending_session_id or None
 
 
+async def _parked_session_id(db: AsyncSession, job: Job) -> str | None:
+    """The session of the newest application parked on `job` (applied before its rip), or None. Newest by id:
+    application ids are ULIDs, so they sort by creation time."""
+    parked = (
+        (
+            await db.execute(
+                select(SessionApplication)
+                .where(col(SessionApplication.job_id) == job.id)
+                .where(col(SessionApplication.status) == SessionApplicationStatus.WAITING_IDENTIFY)
+                .order_by(col(SessionApplication.id).desc())
+            )
+        )
+        .scalars()
+        .first()
+    )
+    return parked.session_id if parked is not None else None
+
+
 def routing_media_type(job: Job) -> MediaType | None:
     """The media type routing keys on: the identified kind, else what the disc
     type alone says. An audio CD is music whether or not MusicBrainz knew it,
@@ -57,6 +85,12 @@ async def resolve_routed_session_id(db: AsyncSession, job: Job) -> str | None:
     the naming preview resolve through this same helper so neither can drift
     from the apply path):
       1. `job.pending_session_id` - explicit per-rip choice.
+         1b. else the session of the newest application parked on the job
+         (`waiting_identify`): an operator's "Apply session" before the rip
+         is just as explicit, and without this step it only took effect
+         after the rip - which still ran on the drive default's (or the
+         disc-type fallback's) rip preset, e.g. an archive rip of every
+         title for a main-feature session.
       2. `drive.default_session_id` - the persistent per-drive default, but
          ONLY when it's compatibility-gated: the drive default wins when
          the routing media type (`routing_media_type`: the job's
@@ -78,9 +112,9 @@ async def resolve_routed_session_id(db: AsyncSession, job: Job) -> str | None:
     whether rip-complete may QUEUE the routed session unattended is
     `auto_apply_allowed`'s question. Returns None when nothing routes.
     """
-    pending = _pending_session_id(job)
-    if pending is not None:
-        return pending
+    explicit = _pending_session_id(job) or await _parked_session_id(db, job)
+    if explicit is not None:
+        return explicit
     media_type = routing_media_type(job)
     drive = (await db.execute(select(Drive).where(col(Drive.id) == job.drive_id))).scalar_one_or_none()
     if drive is not None and drive.default_session_id is not None:

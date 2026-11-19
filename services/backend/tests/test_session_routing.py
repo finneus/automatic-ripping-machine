@@ -23,6 +23,8 @@ from arm_common import (
     JobStatus,
     MediaType,
     Session,
+    SessionApplication,
+    SessionApplicationStatus,
     SessionRoute,
 )
 
@@ -337,3 +339,55 @@ async def test_no_matching_route_returns_none() -> None:
     )
     job = _job(media_type=MediaType.MUSIC, disc_type=DiscType.CD)
     assert await resolve_routed_session_id(db, job) is None  # type: ignore[arg-type]
+
+
+def _application(
+    app_id: str,
+    session_id: str,
+    status: SessionApplicationStatus = SessionApplicationStatus.WAITING_IDENTIFY,
+    job_id: str = "job_01JZXR7K3M5Q8N4VWA00000001",
+) -> SessionApplication:
+    return SessionApplication(id=app_id, session_id=session_id, job_id=job_id, status=status)
+
+
+@pytest.mark.asyncio
+async def test_session_parked_before_the_rip_wins_over_drive_default() -> None:
+    db = FakeSession()
+    _seed(db, default_session_id="ses_default", flag=True)
+    db.rows["session_applications"] = [_application("sap_01", "ses_parked")]
+    assert await resolve_routed_session_id(db, _job()) == "ses_parked"  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_pending_choice_wins_over_a_parked_session() -> None:
+    db = FakeSession()
+    _seed(db, default_session_id=None, flag=True)
+    db.rows["session_applications"] = [_application("sap_01", "ses_parked")]
+    assert await resolve_routed_session_id(db, _job(pending="ses_chosen")) == "ses_chosen"  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_newest_parked_session_wins() -> None:
+    db = FakeSession()
+    _seed(db, default_session_id=None, flag=True)
+    db.rows["session_applications"] = [_application("sap_01", "ses_old"), _application("sap_02", "ses_new")]
+    assert await resolve_routed_session_id(db, _job()) == "ses_new"  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_applications_that_are_not_parked_do_not_route() -> None:
+    db = FakeSession()
+    _seed(db, default_session_id="ses_default", flag=True)
+    db.rows["session_applications"] = [
+        _application("sap_01", "ses_queued", SessionApplicationStatus.QUEUED),
+        _application("sap_02", "ses_done", SessionApplicationStatus.DONE),
+    ]
+    assert await resolve_routed_session_id(db, _job()) == "ses_default"  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_a_session_parked_on_another_job_does_not_route() -> None:
+    db = FakeSession()
+    _seed(db, default_session_id="ses_default", flag=True)
+    db.rows["session_applications"] = [_application("sap_01", "ses_other", job_id="job_01JZXR7K3M5Q8N4VWA00000099")]
+    assert await resolve_routed_session_id(db, _job()) == "ses_default"  # type: ignore[arg-type]
