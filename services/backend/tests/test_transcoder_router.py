@@ -527,3 +527,34 @@ def test_fail_409_when_not_in_progress() -> None:
         )
     assert r.status_code == 409
     assert "not in_progress" in r.json()["detail"]
+
+
+def test_complete_offers_the_raw_rip_to_retention(monkeypatch) -> None:
+    """After the commit that settled the session, the router asks raw_retention about the job's raw rip."""
+    calls: list[tuple[Any, ...]] = []
+
+    async def record(db: Any, job_id: Any, raw_root: Any) -> bool:
+        calls.append((job_id, raw_root))
+        return False
+
+    monkeypatch.setattr(transcoder_router, "prune_raw_after_sessions", record)
+    monkeypatch.setattr(transcoder_router, "request_raw_root", lambda: "/raw-test")
+    db = FakeSession()
+    _seed(db, task_status=TranscodeTaskStatus.IN_PROGRESS)
+    db.rows["session_applications"][0].status = SessionApplicationStatus.RUNNING
+    with TestClient(_make_app(db)) as client:
+        r = client.patch(
+            "/api/transcoder/tasks/txt_1/complete",
+            json={"output_path": "Iron Man (2008)/Iron Man.mkv", "size_bytes": 1, "duration_seconds": 1},
+            headers=_SERVICE_AUTH,
+        )
+    assert r.status_code == 200, r.text
+    from pathlib import Path
+
+    assert calls == [(db.rows["session_applications"][0].job_id, Path("/raw-test"))]
+
+
+def test_request_raw_root_reads_the_settings() -> None:
+    from arm_backend.config import settings
+
+    assert transcoder_router.request_raw_root() == settings.RAW_ROOT

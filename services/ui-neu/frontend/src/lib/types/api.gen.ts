@@ -682,6 +682,7 @@ export type ConfigUpdateRequest = {
      */
     preferred_audio_languages?: Array<string> | null;
     on_previously_ripped?: PreviouslyRippedAction | null;
+    default_retention_policy?: RetentionPolicy | null;
     /**
      * Notifications Enabled
      */

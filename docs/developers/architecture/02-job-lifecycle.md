@@ -286,7 +286,7 @@ v2 bundled rip strategy + transcode settings + output convention into a single "
 
 Rippers write to `/raw/{job_id}/`, one directory per disc insertion. Filenames inside follow MakeMKV's native output convention (`title_tNN.mkv`) plus any sidecars MakeMKV emits. This directory is internal to the pipeline and is never exposed to media scanners; users don't browse `/raw`.
 
-Cleanup: when every transcode task derived from a job reaches a terminal state and retention policy allows, the whole `/raw/{job_id}/` directory is removed. Retention is user-configurable; the default is `keep_forever` — the data-hoarder profile from [00-vision.md](00-vision.md) is the dominant user, so the safe default is to keep raw bits until the operator explicitly opts out (set `default_retention_policy=prune_after_session` in the Config singleton, or per-job).
+Cleanup: with `default_retention_policy=prune_after_session`, the whole `/raw/{job_id}/` directory is removed once the rip ended `ripped` and every session applied to the job ended `done` (`arm_backend/raw_retention.py`, called after a transcode completes and after a passthrough move). A partial rip, or a session that failed or only partly finished, keeps the raw rip for a retry. Retention is user-configurable; the default is `keep_forever` — the data-hoarder profile from [00-vision.md](00-vision.md) is the dominant user, so the safe default is to keep raw bits until the operator explicitly opts out (Settings → Ripping → Raw rips, stored as `default_retention_policy` in the Config singleton).
 
 ### `/media` — user-facing library
 

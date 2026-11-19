@@ -18,6 +18,7 @@ Five endpoints per `03-protocol.md § Transcode container ↔ Backend`:
 
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,7 @@ from sqlmodel import col, select
 from arm_backend.auth import require_service_token
 from arm_backend.db import get_session
 from arm_backend.gpu_claim import release_gpu_for_task
+from arm_backend.raw_retention import prune_raw_after_sessions
 from arm_backend.routers._deps import get_hub
 from arm_backend.transcode_apply import settle_session_application
 from arm_backend.ws import WSHub
@@ -127,6 +129,13 @@ def request_media_root() -> str:
     from arm_backend.config import settings
 
     return settings.MEDIA_ROOT
+
+
+def request_raw_root() -> str:
+    # Lazy for the same reason as request_media_root.
+    from arm_backend.config import settings
+
+    return settings.RAW_ROOT
 
 
 @router.post("/tasks/{task_id}/claim", response_model=ClaimTaskResponse)
@@ -274,6 +283,7 @@ async def complete(
 
     await settle_session_application(db, hub, application)
     await db.commit()
+    await prune_raw_after_sessions(db, job_id, Path(request_raw_root()))
     await db.refresh(task)
     logger.info("transcode complete task_id=%s output=%s", task.id, task.output_path)
     return task

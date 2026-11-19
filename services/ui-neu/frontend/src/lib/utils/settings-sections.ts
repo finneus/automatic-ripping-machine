@@ -105,6 +105,11 @@ const SECTIONS: Record<string, SettingsSection[]> = {
 			keys: ['preferred_audio_languages']
 		},
 		{
+			title: 'Raw rips',
+			blurb: 'What happens to a disc rip in /raw once the sessions applied to it are done.',
+			keys: ['default_retention_policy']
+		},
+		{
 			title: 'Review gate',
 			blurb: 'With "Review first", how long ARM waits for you to check the title before it rips anyway.',
 			keys: ['hold_for_review', 'manual_wait_seconds']

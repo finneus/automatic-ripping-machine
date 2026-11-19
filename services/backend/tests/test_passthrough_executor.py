@@ -843,3 +843,24 @@ async def test_progress_publisher_stops_after_a_failed_write(monkeypatch: Any, c
 
     assert db.call_log[-1] == "rollback" and sent == []
     assert "progress write failed task_id=txt_1" in caplog.text
+
+
+async def test_a_finished_move_offers_the_raw_rip_to_retention(tmp_path: Path, monkeypatch: Any) -> None:
+    """After the terminal commit the executor asks raw_retention about the job's raw rip (it decides)."""
+    import arm_backend.passthrough_executor as executor_mod
+
+    calls: list[tuple[str | None, Path]] = []
+
+    async def record(db: Any, job_id: str | None, raw_root: Path) -> bool:
+        calls.append((job_id, raw_root))
+        return False
+
+    monkeypatch.setattr(executor_mod, "prune_raw_after_sessions", record)
+    raw = tmp_path / "raw" / "job1" / "t0.mkv"
+    raw.parent.mkdir(parents=True)
+    raw.write_bytes(b"data")
+    db = _db(track_output_path=str(raw), task_output_path="Title (2020)/t0.mkv")
+    hub, _ = _hub_with_recorder()
+    settings = _settings(MEDIA_ROOT=str(tmp_path / "media"), RAW_ROOT=str(tmp_path / "raw"))
+    assert await execute_passthrough_task(db, db.rows["transcode_tasks"][0], hub, settings) is True
+    assert calls == [("job_01JZXR7K3M5Q8N4VWA00000001", tmp_path / "raw")]
