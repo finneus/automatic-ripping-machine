@@ -184,7 +184,7 @@ def _failed_titles(state: ParserState, eligible: list[int], ripped: dict[int, Ri
         if title_idx in ripped:
             continue
         if ts.fail_reason:
-            failed[title_idx] = RipResult(ok=False, error=ts.fail_reason)
+            failed[title_idx] = RipResult(ok=False, error=ts.with_read_errors(ts.fail_reason))
 
     # Eligible source indexes that didn't get a file *and* don't have
     # a captured failure reason are surfaced as a generic "produced no
@@ -193,10 +193,9 @@ def _failed_titles(state: ParserState, eligible: list[int], ripped: dict[int, Ri
     for source_idx in eligible:
         if source_idx in ripped or source_idx in failed:
             continue
-        failed[source_idx] = RipResult(
-            ok=False,
-            error="makemkvcon exited 0 but produced no .mkv for this title",
-        )
+        reason = "makemkvcon exited 0 but produced no .mkv for this title"
+        title = state.titles.get(source_idx)
+        failed[source_idx] = RipResult(ok=False, error=title.with_read_errors(reason) if title else reason)
     return failed
 
 

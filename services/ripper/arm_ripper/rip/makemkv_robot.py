@@ -29,6 +29,11 @@ _DIAGNOSTIC_MSG_CODES = frozenset({1002, 3032, 5003, 5037})
 # in the output dir is the source of truth for "title saved ok".
 TITLE_FAIL_CODE = 5003
 
+# MSG:2003 is a read error on the disc: "Error '%1' occurred while reading '%2' at offset '%3'" (e.g. "Scsi error -
+# MEDIUM ERROR:L-EC UNCORRECTABLE ERROR"). A scratched or dirty disc can emit thousands of them, so they are counted
+# per title instead of joining the diagnostics, and the first one explains why the title's save failed.
+READ_ERROR_CODE = 2003
+
 
 def parse_progress_line(line: str) -> float | None:
     """Return the per-operation fractional progress [0, 1] from a PRGV
