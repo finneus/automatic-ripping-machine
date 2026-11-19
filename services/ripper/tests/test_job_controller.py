@@ -1785,6 +1785,7 @@ async def test_fail_unfinished_starts_unstarted_tracks_then_fails_them(caplog, r
         ejector=controller._ejector,
         device=controller._device,
         default_min_length_seconds=controller._default_min_length_seconds,
+        hash_titles=controller._hash_titles,
         output_dir=raw_dir_module.RAW_ROOT / "job_x",
         job_id="job_x",
         disc_type=DiscType.BLURAY,

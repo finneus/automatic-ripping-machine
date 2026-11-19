@@ -168,6 +168,7 @@ def test_container_spec_forwards_ripper_tunables_under_their_ripper_names() -> N
         ARM_RIPPER_NOT_READY_REARM_POLLS="5",
         ARM_RIPPER_OPTICAL_SR_MAX="15",
         ARM_RIPPER_OPTICAL_SG_MAX="31",
+        ARM_RIPPER_HASH_TITLES="false",
     )
     env = container_spec(settings, _drive())["environment"]
     assert env["POLL_INTERVAL_SECONDS"] == "1.5"
@@ -176,6 +177,7 @@ def test_container_spec_forwards_ripper_tunables_under_their_ripper_names() -> N
     assert env["ARM_NOT_READY_REARM_POLLS"] == "5"
     assert env["ARM_OPTICAL_SR_MAX"] == "15"
     assert env["ARM_OPTICAL_SG_MAX"] == "31"
+    assert env["ARM_HASH_TITLES"] == "false"
 
 
 def test_container_spec_omits_unset_tunables() -> None:

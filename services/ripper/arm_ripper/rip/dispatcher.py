@@ -32,6 +32,7 @@ async def rip_all(
     stop: asyncio.Event | None = None,
     skip_track_ids: Collection[str] = (),
     drive_lost: Callable[[], bool] | None = None,
+    hash_titles: bool = True,
 ) -> None:
     """Rip every track in `tracks` and invoke the lifecycle callbacks.
 
@@ -74,6 +75,7 @@ async def rip_all(
             stop=stop,
             skip_track_ids=skip_track_ids,
             drive_lost=drive_lost,
+            hash_titles=hash_titles,
         )
         return
 

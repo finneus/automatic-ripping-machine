@@ -78,6 +78,7 @@ def _build_controller(
             ws=ws,
             device_path=handle,
             default_min_length_seconds=settings.ARM_MIN_LENGTH_SECONDS,
+            hash_titles=settings.ARM_HASH_TITLES,
             resolution_timeout=None,
         )
     return JobController(
@@ -86,6 +87,7 @@ def _build_controller(
         ws=ws,
         device_path=handle,
         default_min_length_seconds=settings.ARM_MIN_LENGTH_SECONDS,
+        hash_titles=settings.ARM_HASH_TITLES,
     )
 
 

@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # sends a non-null value in `RipStartResponse.min_length_seconds`,
     # the ripper uses that instead of this baseline.
     ARM_MIN_LENGTH_SECONDS: int = 120
+    # Compute each ripped title's sha256 (stored on the track; nothing reads it today). Off skips the re-read that
+    # a lone title otherwise waits for before the eject.
+    ARM_HASH_TITLES: bool = True
     # Source mode. When ARM_SOURCE_PATH is set, the ripper skips its poll
     # loop, treats the path as the bound device everywhere (registering it
     # as such with the backend), and runs the scan → identify → rip

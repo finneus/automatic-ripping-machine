@@ -223,6 +223,7 @@ def _record_controller(monkeypatch):
 
     monkeypatch.setattr(main, "JobController", recorder)
     monkeypatch.setattr(main.settings, "ARM_MIN_LENGTH_SECONDS", 77)
+    monkeypatch.setattr(main.settings, "ARM_HASH_TITLES", False)
     return calls, built
 
 
@@ -233,7 +234,13 @@ def test_build_controller_source_mode_never_times_out_resolution(monkeypatch) ->
     assert calls == [
         (
             (client, "drv_1"),
-            {"ws": ws, "device_path": handle, "default_min_length_seconds": 77, "resolution_timeout": None},
+            {
+                "ws": ws,
+                "device_path": handle,
+                "default_min_length_seconds": 77,
+                "hash_titles": False,
+                "resolution_timeout": None,
+            },
         )
     ]
 
@@ -242,7 +249,12 @@ def test_build_controller_drive_mode_leaves_resolution_timeout_to_the_default(mo
     calls, built = _record_controller(monkeypatch)
     handle, ws, client = DriveHandle("/dev/sr0"), object(), object()
     assert main._build_controller(client, "drv_1", ws, handle, source_mode=False) is built
-    assert calls == [((client, "drv_1"), {"ws": ws, "device_path": handle, "default_min_length_seconds": 77})]
+    assert calls == [
+        (
+            (client, "drv_1"),
+            {"ws": ws, "device_path": handle, "default_min_length_seconds": 77, "hash_titles": False},
+        )
+    ]
     assert "resolution_timeout" not in calls[0][1]
 
 
