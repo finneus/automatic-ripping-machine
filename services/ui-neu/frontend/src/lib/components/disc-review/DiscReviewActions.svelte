@@ -83,8 +83,7 @@
 	{#if $isAdmin && job.actions.can_apply}
 		<button
 			onclick={onapplysession}
-			class="btn {isPostRip ? 'disc-review-widget-success-btn' : 'disc-review-widget-action-btn'}"
-			>{isPostRip ? 'Apply session & transcode' : 'Apply session'}</button
+			class="btn {isPostRip ? 'disc-review-widget-success-btn' : 'disc-review-widget-action-btn'}">Apply session</button
 		>
 	{/if}
 	<a href="/jobs/{job.id}" class="btn disc-review-widget-action-btn"> View details </a>

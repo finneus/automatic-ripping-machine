@@ -274,7 +274,9 @@ describe('Transcoder Page', () => {
 			setTranscodeRuntimeEnabled(false);
 			renderComponent(TranscoderPage);
 			expect(
-				screen.getByText('Transcoding is disabled. Queued tasks are held and resume when it is re-enabled.')
+				screen.getByText(
+					'Transcoding is disabled. Queued encode tasks are held and resume when it is re-enabled; passthrough sessions (plain moves into the library) still run.'
+				)
 			).toBeInTheDocument();
 			// Drain semantics: the held queue must stay visible, not be hidden.
 			await waitFor(() => expect(screen.getByText('movie1.mkv')).toBeInTheDocument());
@@ -283,7 +285,9 @@ describe('Transcoder Page', () => {
 		it('does not show the disabled banner when transcoding is capable and enabled', () => {
 			renderComponent(TranscoderPage);
 			expect(
-				screen.queryByText('Transcoding is disabled. Queued tasks are held and resume when it is re-enabled.')
+				screen.queryByText(
+					'Transcoding is disabled. Queued encode tasks are held and resume when it is re-enabled; passthrough sessions (plain moves into the library) still run.'
+				)
 			).not.toBeInTheDocument();
 		});
 
