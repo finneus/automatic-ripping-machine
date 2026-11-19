@@ -720,3 +720,65 @@ def _seed_encode_and_passthrough_queue(db: Any) -> None:
         TranscodeTask(id=tid, session_application_id=sap, source_track_id="trk_1", status=TranscodeTaskStatus.QUEUED)
         for tid, sap in (("txt_e1", "sap_enc"), ("txt_e2", "sap_enc"), ("txt_p", "sap_pt"))
     ]
+
+
+# --- POST /api/transcodes/cleanup (Files page "Clean up transcoder jobs") ---
+
+
+def test_cleanup_deletes_only_finished_tasks_and_emits_each(signing_key: bytes) -> None:
+    db = FakeSession()
+    hub = _CapturingHub()
+    app, token = _make_app(signing_key, db, hub=hub)
+    db.rows["transcode_tasks"] = [
+        _task("txt_done", status=TranscodeTaskStatus.DONE, session_application_id="sap_1", source_track_id="trk_1"),
+        _task("txt_failed", status=TranscodeTaskStatus.FAILED, session_application_id="sap_2", source_track_id="trk_2"),
+        _task("txt_queued", status=TranscodeTaskStatus.QUEUED),
+        _task("txt_running", status=TranscodeTaskStatus.IN_PROGRESS),
+    ]
+    db.rows["session_applications"] = [
+        SessionApplication(
+            id="sap_1",
+            session_id="ses_1",
+            job_id="job_01JZXR7K3M5Q8N4VWA0000000C",
+            status=SessionApplicationStatus.DONE,
+        )
+    ]
+    with TestClient(app) as client:
+        r = client.post("/api/transcodes/cleanup", headers=_auth(token))
+    assert r.status_code == 200
+    assert r.json() == {"deleted": 2, "errors": []}
+    assert sorted(t.id for t in db.rows["transcode_tasks"]) == ["txt_queued", "txt_running"]
+    assert [(e["event_type"], e["payload"]["task_id"], e["job_id"]) for e in hub.events] == [
+        ("task.deleted", "txt_done", "job_01JZXR7K3M5Q8N4VWA0000000C"),
+        ("task.deleted", "txt_failed", None),
+    ]
+
+
+def test_cleanup_with_nothing_finished_deletes_nothing(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db, hub=None)
+    db.rows["transcode_tasks"] = [_task("txt_queued", status=TranscodeTaskStatus.QUEUED)]
+    with TestClient(app) as client:
+        r = client.post("/api/transcodes/cleanup", headers=_auth(token))
+    assert r.json() == {"deleted": 0, "errors": []}
+    assert [t.id for t in db.rows["transcode_tasks"]] == ["txt_queued"]
+
+
+def test_cleanup_releases_a_gpu_claim_left_on_a_finished_task(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["transcode_tasks"] = [_task("txt_failed", status=TranscodeTaskStatus.FAILED)]
+    db.rows["gpus"] = [_gpu(status=GpuStatus.BUSY, claimed_by_task_id="txt_failed")]
+    with TestClient(app) as client:
+        r = client.post("/api/transcodes/cleanup", headers=_auth(token))
+    assert r.json()["deleted"] == 1
+    gpu = db.rows["gpus"][0]
+    assert gpu.status == GpuStatus.AVAILABLE and gpu.claimed_by_task_id is None
+
+
+def test_cleanup_requires_write_access(signing_key: bytes) -> None:
+    app, _ = _make_app(signing_key, _guest_seeded_db())
+    with TestClient(app) as c:
+        r = c.post("/api/transcodes/cleanup")
+    assert r.status_code == 403
+    assert r.json()["detail"] == "read-only role: write access required"

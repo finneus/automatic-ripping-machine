@@ -176,6 +176,7 @@ from arm_common.schemas.transcoder import (
     HeartbeatRequest,
     RegisterTranscoderRequest,
     RegisterTranscoderResponse,
+    TranscodeCleanupResult,
     TranscodeStatsView,
     TranscodeWorkerView,
 )
@@ -433,6 +434,7 @@ __all__ = [
     "MatchRequest",
     "SourceSummary",
     "TrackIdentityView",
+    "TranscodeCleanupResult",
     "TranscodeStatsView",
     "TranscodeTaskView",
     "TranscodeWorkerView",

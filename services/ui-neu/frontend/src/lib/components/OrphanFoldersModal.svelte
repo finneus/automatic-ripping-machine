@@ -11,7 +11,7 @@
 </script>
 
 <!-- Orphan folders modal -->
-{#if features.maintenance && orphans.isOpen}
+{#if features.orphanFolders && orphans.isOpen}
 	<div class="modal">
 		<button
 			type="button"
