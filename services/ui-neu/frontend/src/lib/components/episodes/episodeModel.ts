@@ -25,7 +25,7 @@ export interface EpisodeRow {
 	/** The track's saved season; null when none is set (never assumed). */
 	season: number | null;
 	seconds: number | null;
-	/** Left out of the transcode output (the disc still rips in full). */
+	/** Left out of the transcode output (and of the rip when one track is kept). */
 	excluded: boolean;
 	/** The picker option that is this row's current placement ('' when none): a
 	 * role value, or `s<season>e<episode>` as `pickerOptions` values them. */

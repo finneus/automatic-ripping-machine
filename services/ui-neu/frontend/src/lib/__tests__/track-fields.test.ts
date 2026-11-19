@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { handSetTrackCount, isSeriesTrackList, trackKindLabel, trackSizeLabel } from '../utils/track-fields';
+import {
+	handSetTrackCount,
+	isSeriesTrackList,
+	isUnrippedExclusion,
+	trackKindLabel,
+	trackSizeLabel
+} from '../utils/track-fields';
 import { createTrack } from '../components/__fixtures__/job';
 
 describe('trackKindLabel', () => {
@@ -87,5 +93,19 @@ describe('handSetTrackCount', () => {
 	it('ignores tracks with non-manual or missing provenance', () => {
 		const t = createTrack({ identity_provenance: { episode_number: 'auto', role: 'auto' } });
 		expect(handSetTrackCount([t, createTrack()])).toBe(0);
+	});
+});
+
+describe('isUnrippedExclusion', () => {
+	it('is true for an excluded track still queued after the rip', () => {
+		expect(isUnrippedExclusion({ excluded: true, status: 'queued' }, 'ripped')).toBe(true);
+	});
+
+	it.each([
+		['a kept track', { excluded: false, status: 'queued' }, 'ripped'],
+		['an excluded track the rip read', { excluded: true, status: 'done' }, 'ripped'],
+		['an excluded track before the rip', { excluded: true, status: 'queued' }, 'ripping']
+	] as const)('is false for %s', (_name, track, jobStatus) => {
+		expect(isUnrippedExclusion(track, jobStatus)).toBe(false);
 	});
 });
