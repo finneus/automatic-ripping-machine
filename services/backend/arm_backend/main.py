@@ -64,6 +64,7 @@ from arm_backend.routers import (
     users as users_router,
 )
 from arm_backend.constants import CONFIG_SINGLETON_ID
+from arm_backend.notifications.apprise_log_redaction import install_apprise_log_redaction
 from arm_backend.seeders import run_seeders
 from arm_backend.thediscdb_schedule import thediscdb_refresh_loop
 from arm_backend.transcode_dispatcher import TranscodeDispatcher, set_active_dispatcher
@@ -73,6 +74,7 @@ from arm_backend.ws.router import router as ws_router
 from arm_common import Config, configure_service_logging
 
 configure_service_logging("arm-backend", level=settings.ARM_LOG_LEVEL)
+install_apprise_log_redaction()
 logger = logging.getLogger("arm_backend")
 
 
