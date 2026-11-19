@@ -457,6 +457,16 @@ describe('DriveCard', () => {
 			await waitFor(() => expect(updateDriveMock).toHaveBeenCalledWith('drv_1', { drive_mode: null }));
 		});
 
+		it('says a manual drive waits for Start rip, and says nothing for an auto drive', () => {
+			renderComponent(DriveCard, { props: { drive: createDrive({ drive_mode: 'manual' }), globalAutoRip: true } });
+			expect(screen.getByTestId('drive-manual-hint')).toHaveTextContent('waits until you press Start rip');
+			expect(screen.getByLabelText(/rip mode/i)).toHaveAttribute('data-manual', 'true');
+			cleanup();
+			renderComponent(DriveCard, { props: { drive: createDrive({ drive_mode: 'auto' }), globalAutoRip: false } });
+			expect(screen.queryByTestId('drive-manual-hint')).toBeNull();
+			expect(screen.getByLabelText(/rip mode/i)).toHaveAttribute('data-manual', 'false');
+		});
+
 		it('names the global default it would follow', () => {
 			renderComponent(DriveCard, { props: { drive: createDrive(), globalAutoRip: false } });
 			expect(screen.getByRole('option', { name: 'Default (Manual)' })).toBeInTheDocument();

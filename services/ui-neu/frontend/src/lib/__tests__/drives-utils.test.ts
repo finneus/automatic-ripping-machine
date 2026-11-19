@@ -5,6 +5,7 @@ import {
 	NO_SERIAL_LABEL,
 	driveStatusLabel,
 	isDriveDetached,
+	isManualMode,
 	isRipperOfflinePresent,
 	isRipping,
 	opticalOnly,
@@ -169,5 +170,18 @@ describe('prescanOverrideCount', () => {
 		expect(
 			prescanOverrideCount(drive({ prescan_cache_mb: 1, prescan_timeout: 2, prescan_retries: 3, disc_enum_timeout: 4 }))
 		).toBe(4);
+	});
+});
+
+describe('isManualMode', () => {
+	it.each([
+		['manual', true, true],
+		['manual', false, true],
+		['auto', false, false],
+		['auto', true, false],
+		[null, false, true],
+		[null, true, false]
+	] as const)('drive_mode %s with global auto-rip %s is manual: %s', (mode, globalAutoRip, expected) => {
+		expect(isManualMode({ drive_mode: mode }, globalAutoRip)).toBe(expected);
 	});
 });
