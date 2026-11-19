@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from arm_common.languages import AUDIO_LANGUAGE_LABELS
+
 
 class ConfigFieldMeta(BaseModel):
     """Render + classification metadata for one configuration field. The single
@@ -277,6 +279,19 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         enum_labels={"hold": "Hold for me", "reject": "Reject and eject", "rip": "Rip again"},
         setup_step="discs",
         setup_order=2,
+    ),
+    ConfigFieldMeta(
+        key="preferred_audio_languages",
+        group="Ripping",
+        tier="operator",
+        label="Preferred audio languages",
+        help="When a disc holds the film several times at the same length (one per language group), the main "
+        "feature is the one with these audio languages, in this order. With none ticked, the variant with the most "
+        "audio languages wins.",
+        type="ranked",
+        editable=True,
+        enum_values=list(AUDIO_LANGUAGE_LABELS),
+        enum_labels=AUDIO_LANGUAGE_LABELS,
     ),
     ConfigFieldMeta(
         key="block_on_miss",

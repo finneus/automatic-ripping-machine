@@ -221,11 +221,11 @@ def test_later_unparseable_chapter_count_keeps_the_earlier_valid_one():
 
 
 def test_scan_title_without_a_duration_is_none():
-    assert _scan_title(0, {"chapter_count": 4}) is None
+    assert _scan_title(0, {"chapter_count": 4}, {}) is None
 
 
 def test_scan_title_with_a_non_int_duration_is_none():
-    assert _scan_title(0, {"duration_seconds": "60"}) is None
+    assert _scan_title(0, {"duration_seconds": "60"}, {}) is None
 
 
 def test_scan_title_builds_the_exact_scan_title_from_a_full_entry():
@@ -235,14 +235,14 @@ def test_scan_title_builds_the_exact_scan_title_from_a_full_entry():
         "size_bytes": 2048,
         "source_file": "title02.mkv",
     }
-    assert _scan_title(2, entry) == ScanTitle(
+    assert _scan_title(2, entry, {}) == ScanTitle(
         index=2, duration_seconds=60, chapter_count=4, size_bytes=2048, source_file="title02.mkv"
     )
 
 
 def test_scan_title_maps_wrongly_typed_optional_values_to_none():
     entry: dict[str, object] = {"duration_seconds": 60, "chapter_count": "4", "size_bytes": "2048", "source_file": 7}
-    assert _scan_title(1, entry) == ScanTitle(index=1, duration_seconds=60)
+    assert _scan_title(1, entry, {}) == ScanTitle(index=1, duration_seconds=60)
 
 
 def test_on_cinfo_code_1_sets_disc_type_only_while_unset():
@@ -315,3 +315,39 @@ def test_scan_titles_sorts_by_index_and_drops_titles_without_duration():
         ScanTitle(index=0, duration_seconds=10),
         ScanTitle(index=2, duration_seconds=30),
     ]
+
+
+# --- SINFO: audio languages per title -------------------------------------------------------------------------------
+
+_SINFO_DISC = [
+    'TINFO:0,9,0,"2:23:10"',
+    'SINFO:0,0,1,6201,"Video"',
+    'SINFO:0,1,1,6202,"Audio"',
+    'SINFO:0,1,3,0,"eng"',
+    'SINFO:0,2,1,6202,"Audio"',
+    'SINFO:0,2,3,0,"jpn"',
+    'SINFO:0,3,1,6203,"Subtitles"',
+    'SINFO:0,3,3,0,"ger"',
+    'TINFO:1,9,0,"2:23:10"',
+    'SINFO:1,1,3,0,"ger"',
+    'SINFO:1,1,1,6202,"Audio"',
+    'SINFO:1,2,1,6202,"Audio"',
+    'SINFO:1,2,3,0,"eng"',
+    'SINFO:1,3,1,6202,"Audio"',
+    'SINFO:1,3,3,0,"deu"',
+    'SINFO:1,4,1,6202,"Audio"',
+    'SINFO:1,4,2,0,"Surround 5.1"',
+    'TINFO:2,9,0,"0:05:00"',
+]
+
+
+def test_reads_each_titles_audio_languages_in_stream_order():
+    _, titles, _ = parse_makemkvcon_info(_SINFO_DISC)
+    assert [t.audio_languages for t in titles] == [["eng", "jpn"], ["deu", "eng"], []]
+
+
+def test_skips_sinfo_with_non_int_fields_or_too_few_fields():
+    parser = _InfoParser()
+    for line in ('SINFO:x,1,1,6202,"Audio"', 'SINFO:0,1,3,"eng"', 'SINFO:0,1,4,0,"English"'):
+        parser.feed(line)
+    assert parser.streams == {}

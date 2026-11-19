@@ -100,6 +100,11 @@ const SECTIONS: Record<string, SettingsSection[]> = {
 			keys: ['auto_rip_on_insert', 'block_on_miss', 'on_previously_ripped', 'ripping_paused']
 		},
 		{
+			title: 'Main feature',
+			blurb: 'Which variant of the film ARM rips when a disc holds it several times at the same length.',
+			keys: ['preferred_audio_languages']
+		},
+		{
 			title: 'Review gate',
 			blurb: 'With "Review first", how long ARM waits for you to check the title before it rips anyway.',
 			keys: ['hold_for_review', 'manual_wait_seconds']
