@@ -887,10 +887,10 @@ async def test_run_makemkvcon_cancelled_swallows_a_reap_error_and_still_cancels(
     assert proc.waits_after_kill == 1  # the reap ran, raised, and was swallowed
 
 
-async def test_streamer_suspended_at_exit_is_cancelled_and_later_lines_are_dropped(monkeypatch):
-    # Current behaviour, pinned for the guidelines refactor (#435): the cleanup cancels the streamer before
-    # the drain. Filed as a defect.
-    proc = _FakeProc(
+def _late_lines_proc() -> _FakeProc:
+    """A diagnostic, the save phase, title 3 starting, then a progress line whose callback suspends, and after it a
+    late diagnostic and the move to title 7."""
+    return _FakeProc(
         [
             (line + "\n").encode()
             for line in (
@@ -903,14 +903,38 @@ async def test_streamer_suspended_at_exit_is_cancelled_and_later_lines_are_dropp
             )
         ]
     )
-    _spawn(monkeypatch, proc)
+
+
+async def test_streamer_suspended_at_exit_still_parses_the_lines_after_it(monkeypatch):
+    """#455: makemkvcon's last lines were dropped when a rip callback had the streamer suspended at the exit."""
+    _spawn(monkeypatch, _late_lines_proc())
+    state = makemkv_stream.ParserState()
+
+    async def on_title_progress(_idx: int, _frac: float) -> None:
+        for _ in range(5):  # still suspended when makemkvcon has exited
+            await asyncio.sleep(0)
+
+    error = await makemkv_process.run_makemkvcon(
+        ["makemkvcon"],
+        state,
+        callbacks=makemkv_stream.RipCallbacks(on_title_progress=on_title_progress),
+        eligible_source_indexes=[3, 7],
+    )
+
+    assert error is None
+    assert state.diagnostics == ["LIBMKV_TRACE: Exception", "LIBMKV_TRACE: Late"]
+    assert state.current_title == 7
+
+
+async def test_a_callback_hanging_past_the_drain_timeout_gets_the_streamer_cancelled(monkeypatch, caplog):
+    _spawn(monkeypatch, _late_lines_proc())
+    monkeypatch.setattr(makemkv_process, "STREAM_DRAIN_SECONDS", 0.05)
     state = makemkv_stream.ParserState()
     entered = asyncio.Event()
-    never = asyncio.Event()
 
     async def on_title_progress(_idx: int, _frac: float) -> None:
         entered.set()
-        await never.wait()
+        await asyncio.Event().wait()
 
     error = await asyncio.wait_for(
         makemkv_process.run_makemkvcon(
@@ -922,13 +946,38 @@ async def test_streamer_suspended_at_exit_is_cancelled_and_later_lines_are_dropp
         timeout=2.0,
     )
 
-    assert error is None
-    assert entered.is_set()
-    # Applied before the suspension.
+    assert error is None and entered.is_set()
     assert state.diagnostics == ["LIBMKV_TRACE: Exception"]
-    assert state.current_title == 3
-    # Dropped after it: the late diagnostic and the move to title 7.
     assert 7 not in state.titles
+    assert "makemkvcon output not fully parsed: a rip callback held the streamer for 0.05s after exit" in caplog.text
+
+
+async def test_stop_cancels_a_streamer_that_a_callback_holds(monkeypatch):
+    """A stopped run drops the rest of the output: the streamer is cancelled even inside a hanging callback."""
+    proc = _ScriptedHangingProc(['PRGC:5017,0,"Saving to MKV file"', "PRGV:5000,1000,10000"])
+    _spawn(monkeypatch, proc)
+    state = makemkv_stream.ParserState()
+    entered = asyncio.Event()
+
+    async def on_title_progress(_idx: int, _frac: float) -> None:
+        entered.set()
+        await asyncio.Event().wait()
+
+    stop = asyncio.Event()
+    run = asyncio.create_task(
+        makemkv_process.run_makemkvcon(
+            ["makemkvcon"],
+            state,
+            callbacks=makemkv_stream.RipCallbacks(on_title_progress=on_title_progress),
+            eligible_source_indexes=[3],
+            stop=stop,
+        )
+    )
+    await asyncio.wait_for(entered.wait(), timeout=2.0)
+    stop.set()
+
+    assert await asyncio.wait_for(run, timeout=2.0) == makemkv_process.STOPPED_ERROR
+    assert proc.killed
 
 
 async def test_run_makemkvcon_nonzero_exit_without_stderr_reports_the_exit_code(monkeypatch):
