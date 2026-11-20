@@ -1627,6 +1627,8 @@ def test_recovery_abandon_transitions_and_emits() -> None:
     assert r.status_code == 200
     assert r.json()["status"] == "abandoned"
     assert any(e["event_type"] == "rip.abandoned" for e in hub.events)
+    # #465: the abandon, the cancelled parked applications and the event row are committed, not rolled back.
+    assert db.committed == 1
 
 
 def test_recovery_abandon_unknown_404() -> None:

@@ -802,6 +802,7 @@ async def recovery_abandon(
         job_id=job.id,
         session=session,
     )
+    await session.commit()
     return job
 
 
