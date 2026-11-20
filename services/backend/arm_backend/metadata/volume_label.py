@@ -3,7 +3,10 @@
 import re
 import unicodedata
 
-_YEAR_SUFFIX_RE = re.compile(r"[\s_\-.]*\(?\d{4}\)?\s*$")
+# A release year at the end of the label (`THE_MATRIX_1999`, `Movie (2010)`). Capped at 2029, like the disc-hint
+# year in `metadata.dispatcher`, so a title ending in a later number (BLADE_RUNNER_2049) keeps it. A number
+# earlier in the label (2001_A_SPACE_ODYSSEY) is part of the title, never the year.
+_YEAR_SUFFIX_RE = re.compile(r"[\s_\-.]*\(?(?<!\d)(19\d{2}|20[0-2]\d)\)?\s*$")
 # DVDs commonly bake the broadcast standard into the volume label
 # (e.g. `THE_MATRIX_NTSC` or `MOVIE_NTSC_1999`). It's noise for title
 # matching — strip it before the underscore-to-space pass so OMDB/TMDB
@@ -32,12 +35,17 @@ def normalize_volume_label(label: str) -> tuple[str, int | None]:
     cleaned = _BD_TOKEN_RE.sub("", cleaned)
     cleaned = _BLURAY_BRANDING_RE.sub("", cleaned)
     cleaned = cleaned.replace("_", " ").replace(".", " ").strip()
-    year: int | None = None
-    m = re.search(r"(\d{4})", cleaned)
-    if m:
-        candidate = int(m.group(1))
-        if 1900 <= candidate <= 2100:
-            year = candidate
-    cleaned = _YEAR_SUFFIX_RE.sub("", cleaned).strip()
+    cleaned, year = _split_year(cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned, year
+
+
+def _split_year(cleaned: str) -> tuple[str, int | None]:
+    """Split a release year off the end of `cleaned`. A label that is nothing but a year (`1917`) is the title."""
+    m = _YEAR_SUFFIX_RE.search(cleaned)
+    if m is None:
+        return cleaned, None
+    title = cleaned[: m.start()].strip()
+    if not title:
+        return cleaned, None
+    return title, int(m.group(1))
