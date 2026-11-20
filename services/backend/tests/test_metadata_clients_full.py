@@ -570,3 +570,51 @@ async def test_tmdb_detail_result_tolerates_non_dict_external_ids(http_client):
     )
     r = await TMDBClient("k", http_client).detail_result(8, "movie")
     assert r.payload["imdb_id"] is None
+
+
+# --- #467: a 200 whose body is not a JSON object is that provider's miss, not a 500 ----------------------------------
+
+
+def _not_json() -> httpx.Response:
+    return httpx.Response(200, text="<html>proxy error</html>")
+
+
+def _not_an_object() -> httpx.Response:
+    return httpx.Response(200, json=["not", "an", "object"])
+
+
+_BAD_BODIES = [
+    (_not_json, "returned non-JSON response"),
+    (_not_an_object, "returned a JSON response that is not an object"),
+]
+
+
+@pytest.mark.parametrize(("response", "message"), _BAD_BODIES)
+@respx.mock
+async def test_omdb_non_object_200_is_a_lookup_error(http_client, response, message) -> None:  # type: ignore[no-untyped-def]
+    respx.get("https://www.omdbapi.com/").mock(return_value=response())
+    with pytest.raises(LookupError, match=f"omdb {message}"):
+        await OMDBClient("k", http_client).lookup_by_title("x")
+
+
+@pytest.mark.parametrize(("response", "message"), _BAD_BODIES)
+@respx.mock
+async def test_musicbrainz_non_object_200_is_a_lookup_error(http_client, response, message) -> None:  # type: ignore[no-untyped-def]
+    respx.get("https://musicbrainz.org/ws/2/discid/abc123").mock(return_value=response())
+    with pytest.raises(LookupError, match=f"musicbrainz {message}"):
+        await MusicBrainzClient("arm-test/0.0 (test@example.com)", http_client).lookup_disc_id("abc123")
+
+
+@pytest.mark.parametrize(("response", "message"), _BAD_BODIES)
+@respx.mock
+async def test_arm_server_non_object_200_is_a_lookup_error(http_client, response, message) -> None:  # type: ignore[no-untyped-def]
+    respx.get(_ARM).mock(return_value=response())
+    with pytest.raises(LookupError, match=f"arm_server {message}"):
+        await ArmServerClient(http_client).lookup_by_crc64("c1")
+
+
+@respx.mock
+async def test_tmdb_find_non_object_200_is_a_lookup_error(http_client) -> None:  # type: ignore[no-untyped-def]
+    respx.get("https://api.themoviedb.org/3/find/tt0000003").mock(return_value=_not_an_object())
+    with pytest.raises(LookupError, match="tmdb find returned a JSON response that is not an object"):
+        await TMDBClient("k", http_client).find_by_imdb_id("tt0000003")
