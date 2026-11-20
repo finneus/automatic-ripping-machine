@@ -76,6 +76,23 @@ def test_normalize_preserves_unicode_titles():
     assert normalize_volume_label("ＴＨＥ_ＭＡＴＲＩＸ_1999") == ("THE MATRIX", 1999)
 
 
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        # #466: a number in the title is not the release year.
+        ("BLADE_RUNNER_2049", ("BLADE RUNNER 2049", None)),
+        ("2001_A_SPACE_ODYSSEY", ("2001 A SPACE ODYSSEY", None)),
+        ("1917", ("1917", None)),
+        ("THE_MATRIX_1999", ("THE MATRIX", 1999)),
+        ("Movie (2010)", ("Movie", 2010)),
+        ("MOVIE_1999_EXTENDED", ("MOVIE 1999 EXTENDED", None)),
+        ("DISC_21999", ("DISC 21999", None)),
+    ],
+)
+def test_normalize_takes_the_year_only_from_the_end_of_the_label(label: str, expected: tuple[str, int | None]):
+    assert normalize_volume_label(label) == expected
+
+
 @respx.mock
 async def test_dispatcher_dvd_tmdb_movie_hit():
     respx.get("https://api.themoviedb.org/3/search/movie").mock(

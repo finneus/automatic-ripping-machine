@@ -77,10 +77,23 @@ async def test_no_volume_label_after_crc64_miss_returns_none() -> None:
 
 
 async def test_empty_title_after_normalize_returns_none() -> None:
-    """A volume label that is purely a year normalizes to an empty title."""
+    """A volume label that is nothing but disc branding normalizes to an empty title."""
     async with httpx.AsyncClient(timeout=5.0) as http:
-        result = await MetadataDispatcher(http).identify(_scan(volume_label="1999"), _config())
+        result = await MetadataDispatcher(http).identify(_scan(volume_label="BLURAY"), _config())
     assert result is None
+
+
+async def test_a_label_that_is_only_a_year_searches_it_as_the_title() -> None:
+    """#466: `1917` is the film's title, not an empty title with a release year."""
+    with respx.mock:
+        route = respx.get("https://api.themoviedb.org/3/search/movie").mock(
+            return_value=httpx.Response(200, json={"results": [{"title": "1917", "release_date": "2019-12-25"}]})
+        )
+        async with httpx.AsyncClient(timeout=5.0) as http:
+            result = await MetadataDispatcher(http).identify(_scan(volume_label="1917"), _config())
+    assert result is not None and result.title == "1917"
+    params = route.calls[0].request.url.params
+    assert params["query"] == "1917" and "year" not in params
 
 
 async def test_tmdb_movie_miss_tv_hit() -> None:
