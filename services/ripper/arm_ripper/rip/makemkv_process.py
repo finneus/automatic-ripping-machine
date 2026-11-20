@@ -4,14 +4,20 @@ Spawn it, stream its output, wait with a timeout or a stop signal, and map the e
 """
 
 import asyncio
+import logging
 
 from arm_ripper.rip.makemkv_stream import ParserState, RipCallbacks, stream_output
 from arm_ripper.rip.subprocess_cleanup import kill_if_running
+
+logger = logging.getLogger("arm_ripper.rip.makemkv")
 
 RIP_TIMEOUT_SECONDS = 6 * 60 * 60  # 6 hours: worst-case BD
 # The error a rip reports when its caller set `stop` (the drive dropped off the
 # bus mid-rip, arm_ripper.job_controller): makemkvcon was killed, not failed.
 STOPPED_ERROR = "makemkvcon stopped: the drive disconnected"
+# How long a clean exit waits for the streamer to parse the output makemkvcon left behind. Only a rip callback that
+# hangs (a backend call that never returns) can keep it longer; the streamer is then cancelled and the rest dropped.
+STREAM_DRAIN_SECONDS = 30.0
 
 _NO_CALLBACKS = RipCallbacks()
 
@@ -113,17 +119,41 @@ async def run_makemkvcon(
         await proc.wait()
         streamer.cancel()
         return compose_error(f"makemkvcon timed out after {RIP_TIMEOUT_SECONDS}s", state.diagnostics)
+    except BaseException:
+        # A cancelled caller unwinds without reading `state`.
+        streamer.cancel()
+        raise
     finally:
         await kill_if_running(proc)
-        streamer.cancel()
 
-    # Drain the streamer so every line after EOF is processed before callers read `state`.
+    if stopped:
+        await _cancel_streamer(streamer)
+        return STOPPED_ERROR
+
+    await _drain_streamer(streamer)
+    return await _exit_error(proc, state)
+
+
+async def _cancel_streamer(streamer: asyncio.Task[None]) -> None:
+    """Cancel the streamer and wait for it to unwind."""
+    streamer.cancel()
     try:
         await streamer
     except asyncio.CancelledError:
         pass
 
-    if stopped:
-        return STOPPED_ERROR
 
-    return await _exit_error(proc, state)
+async def _drain_streamer(streamer: asyncio.Task[None]) -> None:
+    """Let the streamer parse every line makemkvcon left before callers read `state`.
+
+    makemkvcon has exited, so its output is all buffered and the streamer reaches EOF on its own: the last lines (the
+    final progress, the move to the next title, a MSG:5003 reason) are parsed even when a rip callback had the
+    streamer suspended at the exit. A callback that hangs past STREAM_DRAIN_SECONDS gets the streamer cancelled.
+    """
+    try:
+        await asyncio.wait_for(streamer, timeout=STREAM_DRAIN_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "makemkvcon output not fully parsed: a rip callback held the streamer for %ss after exit",
+            STREAM_DRAIN_SECONDS,
+        )
