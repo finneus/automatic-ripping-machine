@@ -864,3 +864,114 @@ async def test_a_finished_move_offers_the_raw_rip_to_retention(tmp_path: Path, m
     settings = _settings(MEDIA_ROOT=str(tmp_path / "media"), RAW_ROOT=str(tmp_path / "raw"))
     assert await execute_passthrough_task(db, db.rows["transcode_tasks"][0], hub, settings) is True
     assert calls == [("job_01JZXR7K3M5Q8N4VWA00000001", tmp_path / "raw")]
+
+
+# --- a copy whose destination share dropped its connection starts over ---------------------------------------------
+
+
+def _flaky_mover(failures: list[OSError], size: int = 7) -> tuple[Any, list[int]]:
+    """A mover that raises each of `failures` in turn, then reports `size` bytes copied and returns it."""
+    calls: list[int] = []
+
+    def mover(_source: Path, _final: Path, *, cancel: Any, on_bytes: Any) -> int:
+        calls.append(1)
+        on_bytes(3)
+        if len(calls) <= len(failures):
+            raise failures[len(calls) - 1]
+        return size
+
+    return mover, calls
+
+
+def _dropped() -> OSError:
+    import errno
+
+    return ConnectionAbortedError(errno.ECONNABORTED, "Software caused connection abort")
+
+
+def test_a_copy_that_lost_the_share_starts_over_and_counts_from_zero(monkeypatch: Any, caplog: Any) -> None:
+    import threading
+
+    import arm_backend.passthrough_executor as mod
+
+    monkeypatch.setattr(mod, "MOVE_RETRY_DELAY_SECONDS", 0)
+    mover, calls = _flaky_mover([_dropped(), _dropped()])
+    progress = mod._CopyProgress()
+
+    size = mod._move_file_retrying_a_dropped_share(
+        mover, Path("/raw/t00.mkv"), Path("/media/m.mkv"), threading.Event(), progress
+    )
+
+    assert size == 7 and len(calls) == 3
+    assert progress.done == 3  # restarted before each new attempt
+    assert "t00.mkv lost the destination's connection" in caplog.text and "attempt 3 of 3" in caplog.text
+
+
+def test_a_copy_that_keeps_losing_the_share_fails_after_the_last_attempt(monkeypatch: Any) -> None:
+    import threading
+
+    import pytest
+
+    import arm_backend.passthrough_executor as mod
+
+    monkeypatch.setattr(mod, "MOVE_RETRY_DELAY_SECONDS", 0)
+    mover, calls = _flaky_mover([_dropped()] * mod.MOVE_ATTEMPTS)
+
+    with pytest.raises(ConnectionAbortedError):
+        mod._move_file_retrying_a_dropped_share(
+            mover, Path("/raw/t00.mkv"), Path("/media/m.mkv"), threading.Event(), mod._CopyProgress()
+        )
+    assert len(calls) == mod.MOVE_ATTEMPTS
+
+
+def test_any_other_copy_error_is_not_retried() -> None:
+    import errno
+    import threading
+
+    import pytest
+
+    import arm_backend.passthrough_executor as mod
+
+    mover, calls = _flaky_mover([OSError(errno.ENOSPC, "No space left on device")])
+
+    with pytest.raises(OSError, match="No space left"):
+        mod._move_file_retrying_a_dropped_share(
+            mover, Path("/raw/t00.mkv"), Path("/media/m.mkv"), threading.Event(), mod._CopyProgress()
+        )
+    assert len(calls) == 1
+
+
+def test_a_cancel_during_the_wait_stops_the_retry() -> None:
+    import threading
+
+    import pytest
+
+    import arm_backend.passthrough_executor as mod
+    from arm_common.fileops import CopyCancelled
+
+    mover, calls = _flaky_mover([_dropped()])
+    cancel = threading.Event()
+    cancel.set()
+
+    with pytest.raises(CopyCancelled):
+        mod._move_file_retrying_a_dropped_share(
+            mover, Path("/raw/t00.mkv"), Path("/media/m.mkv"), cancel, mod._CopyProgress()
+        )
+    assert len(calls) == 1
+
+
+def test_a_folder_move_is_never_retried(tmp_path: Path) -> None:
+    import threading
+
+    import pytest
+
+    import arm_backend.passthrough_executor as mod
+
+    mover, calls = _flaky_mover([_dropped()])
+    settings = _settings(ARM_TRANSCODE_PUID="")
+
+    with pytest.raises(ConnectionAbortedError):
+        mod._move_and_chown(
+            mover, tmp_path / "BDMV", tmp_path / "out", settings, True, threading.Event(), mod._CopyProgress()
+        )
+    assert len(calls) == 1
