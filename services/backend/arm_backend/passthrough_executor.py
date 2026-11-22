@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 from collections.abc import Callable
 import logging
 import os
@@ -68,6 +69,24 @@ _cancel_events: dict[str, threading.Event] = {}
 # durable surface the Transcoder page reads) and published over WS.
 PROGRESS_INTERVAL_SECONDS = 2.0
 
+# A NAS share can drop its connection for a moment (an SMB reconnect). A `soft` CIFS mount then fails the write in
+# flight with one of these errors instead of waiting for the reconnect. The file copy has already removed its partial
+# file and kept the source, so it starts over after MOVE_RETRY_DELAY_SECONDS, at most MOVE_ATTEMPTS times in all.
+_DROPPED_CONNECTION_ERRNOS = frozenset(
+    {
+        errno.ECONNABORTED,
+        errno.ECONNRESET,
+        errno.ETIMEDOUT,
+        errno.EHOSTDOWN,
+        errno.EHOSTUNREACH,
+        errno.ENETDOWN,
+        errno.ENETUNREACH,
+        errno.ENETRESET,
+    }
+)
+MOVE_ATTEMPTS = 3
+MOVE_RETRY_DELAY_SECONDS = 30.0
+
 
 class _CopyProgress:
     """Bytes copied so far; written by the worker thread only.
@@ -85,6 +104,10 @@ class _CopyProgress:
             self.total = self._sizer()
             self._sizer = None
         self.done += n
+
+    def restart(self) -> None:
+        """Count from zero again, for a copy that starts over."""
+        self.done = 0
 
 
 def request_cancel(task_id: str) -> bool:
@@ -481,12 +504,47 @@ def _move_and_chown(
     cancel: threading.Event,
     progress: _CopyProgress,
 ) -> int:
-    if not is_folder:
+    if is_folder:
+        size = mover(source, final, cancel=cancel, on_bytes=progress.add)
+    else:
         progress.total = source.stat().st_size
-    size = mover(source, final, cancel=cancel, on_bytes=progress.add)
+        size = _move_file_retrying_a_dropped_share(mover, source, final, cancel, progress)
     if settings.ARM_TRANSCODE_PUID:
         _best_effort_chown(final, settings, tree=is_folder)
     return size
+
+
+def _move_file_retrying_a_dropped_share(
+    mover: Callable[..., int],
+    source: Path,
+    final: Path,
+    cancel: threading.Event,
+    progress: _CopyProgress,
+) -> int:
+    """Move one file, starting the copy over when the destination share dropped its connection under it.
+
+    Only a file: a folder copy (`move_tree`) can leave part of its tree behind, which a second attempt would refuse.
+    Any other error, or the last attempt's, propagates. A cancel during the wait stops it like a cancel mid-copy.
+    """
+    attempt = 1
+    while True:
+        try:
+            return mover(source, final, cancel=cancel, on_bytes=progress.add)
+        except OSError as exc:
+            if attempt >= MOVE_ATTEMPTS or exc.errno not in _DROPPED_CONNECTION_ERRNOS:
+                raise
+            logger.warning(
+                "passthrough copy of %s lost the destination's connection (%s); starting over in %ss, attempt %d of %d",
+                source.name,
+                exc,
+                MOVE_RETRY_DELAY_SECONDS,
+                attempt + 1,
+                MOVE_ATTEMPTS,
+            )
+            progress.restart()
+            if cancel.wait(MOVE_RETRY_DELAY_SECONDS):
+                raise CopyCancelled(str(source)) from exc
+            attempt += 1
 
 
 def _best_effort_chown(final: Path, settings: Settings, *, tree: bool = False) -> None:
