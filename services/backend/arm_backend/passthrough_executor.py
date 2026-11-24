@@ -507,27 +507,26 @@ def _move_and_chown(
     cancel: threading.Event,
     progress: _CopyProgress,
 ) -> int:
-    if is_folder:
-        size = mover(source, final, cancel=cancel, on_bytes=progress.add)
-    else:
+    if not is_folder:
         progress.total = source.stat().st_size
-        size = _move_file_retrying_a_dropped_share(mover, source, final, cancel, progress)
+    size = _move_retrying_a_dropped_share(mover, source, final, cancel, progress)
     if settings.ARM_TRANSCODE_PUID:
         _best_effort_chown(final, settings, tree=is_folder)
     return size
 
 
-def _move_file_retrying_a_dropped_share(
+def _move_retrying_a_dropped_share(
     mover: Callable[..., int],
     source: Path,
     final: Path,
     cancel: threading.Event,
     progress: _CopyProgress,
 ) -> int:
-    """Move one file, starting the copy over when the destination share dropped its connection under it.
+    """Move a file or a folder, starting the copy over when the destination share dropped its connection under it.
 
-    Only a file: a folder copy (`move_tree`) can leave part of its tree behind, which a second attempt would refuse.
-    Any other error, or the last attempt's, propagates. A cancel during the wait stops it like a cancel mid-copy.
+    Safe for both: a failed file copy removes its partial file, and a failed folder copy its staging folder, and both
+    keep the source. Any other error, or the last attempt's, propagates. A cancel during the wait stops it like a
+    cancel mid-copy.
     """
     attempt = 1
     while True:

@@ -898,7 +898,7 @@ def test_a_copy_that_lost_the_share_starts_over_and_counts_from_zero(monkeypatch
     mover, calls = _flaky_mover([_dropped(), _dropped()])
     progress = mod._CopyProgress()
 
-    size = mod._move_file_retrying_a_dropped_share(
+    size = mod._move_retrying_a_dropped_share(
         mover, Path("/raw/t00.mkv"), Path("/media/m.mkv"), threading.Event(), progress
     )
 
@@ -918,7 +918,7 @@ def test_a_copy_that_keeps_losing_the_share_fails_after_the_last_attempt(monkeyp
     mover, calls = _flaky_mover([_dropped()] * mod.MOVE_ATTEMPTS)
 
     with pytest.raises(ConnectionAbortedError):
-        mod._move_file_retrying_a_dropped_share(
+        mod._move_retrying_a_dropped_share(
             mover, Path("/raw/t00.mkv"), Path("/media/m.mkv"), threading.Event(), mod._CopyProgress()
         )
     assert len(calls) == mod.MOVE_ATTEMPTS
@@ -935,7 +935,7 @@ def test_any_other_copy_error_is_not_retried() -> None:
     mover, calls = _flaky_mover([OSError(errno.ENOSPC, "No space left on device")])
 
     with pytest.raises(OSError, match="No space left"):
-        mod._move_file_retrying_a_dropped_share(
+        mod._move_retrying_a_dropped_share(
             mover, Path("/raw/t00.mkv"), Path("/media/m.mkv"), threading.Event(), mod._CopyProgress()
         )
     assert len(calls) == 1
@@ -954,24 +954,23 @@ def test_a_cancel_during_the_wait_stops_the_retry() -> None:
     cancel.set()
 
     with pytest.raises(CopyCancelled):
-        mod._move_file_retrying_a_dropped_share(
+        mod._move_retrying_a_dropped_share(
             mover, Path("/raw/t00.mkv"), Path("/media/m.mkv"), cancel, mod._CopyProgress()
         )
     assert len(calls) == 1
 
 
-def test_a_folder_move_is_never_retried(tmp_path: Path) -> None:
+def test_a_folder_move_is_retried_too(tmp_path: Path, monkeypatch: Any) -> None:
+    """A folder copy is staged, so a dropped connection leaves nothing behind that a second attempt would refuse."""
     import threading
-
-    import pytest
 
     import arm_backend.passthrough_executor as mod
 
-    mover, calls = _flaky_mover([_dropped()])
+    monkeypatch.setattr(mod, "MOVE_RETRY_DELAY_SECONDS", 0)
+    mover, calls = _flaky_mover([_dropped()], size=115)
     settings = _settings(ARM_TRANSCODE_PUID="")
 
-    with pytest.raises(ConnectionAbortedError):
-        mod._move_and_chown(
-            mover, tmp_path / "BDMV", tmp_path / "out", settings, True, threading.Event(), mod._CopyProgress()
-        )
-    assert len(calls) == 1
+    size = mod._move_and_chown(
+        mover, tmp_path / "BDMV", tmp_path / "out", settings, True, threading.Event(), mod._CopyProgress()
+    )
+    assert size == 115 and len(calls) == 2
