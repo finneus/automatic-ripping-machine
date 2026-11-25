@@ -69,6 +69,8 @@ class ScanTitle(BaseModel):
     duration_seconds: int
     chapter_count: int | None = None
     size_bytes: int | None = None
+    # MakeMKV's output file name for the title (TINFO 27, `title_t00.mkv`), not where it comes from: that is
+    # `source_name`.
     source_file: str | None = None
     # The title's audio languages from the scan (MakeMKV SINFO), terminological ISO 639-2 codes in stream order.
     audio_languages: list[str] = Field(default_factory=list)

@@ -52,7 +52,7 @@ def test_role_for_disc_type() -> None:
     assert role_for_disc_type("Nonsense") is TrackRole.OTHER
 
 
-def test_build_claims_joins_by_source_file() -> None:
+def test_build_claims_joins_by_source_name() -> None:
     match = _match(
         [
             {
@@ -72,9 +72,9 @@ def test_build_claims_joins_by_source_file() -> None:
     scan = ScanResult(
         disc_type=DiscType.BLURAY,
         titles=[
-            ScanTitle(index=0, duration_seconds=7894, source_file="00001.mpls"),
-            ScanTitle(index=1, duration_seconds=720, source_file="00011.mpls"),
-            ScanTitle(index=2, duration_seconds=30, source_file="00029.mpls"),  # not in db
+            ScanTitle(index=0, duration_seconds=7894, source_name="00001.mpls"),
+            ScanTitle(index=1, duration_seconds=720, source_name="00011.mpls"),
+            ScanTitle(index=2, duration_seconds=30, source_name="00029.mpls"),  # not in db
         ],
     )
     result = build_claims(match, scan, now=NOW)
@@ -104,7 +104,7 @@ def test_build_claims_series_episode_fields() -> None:
     )
     scan = ScanResult(
         disc_type=DiscType.BLURAY,
-        titles=[ScanTitle(index=5, duration_seconds=4015, source_file="00800.mpls")],
+        titles=[ScanTitle(index=5, duration_seconds=4015, source_name="00800.mpls")],
     )
     result = build_claims(match, scan, now=NOW)
     assert result.tracks["5"].role is TrackRole.EPISODE
@@ -115,8 +115,8 @@ def test_build_claims_series_episode_fields() -> None:
     assert result.tracks["5"].selected is True
 
 
-def test_build_claims_duration_fallback_when_no_source_file() -> None:
-    # DVD scans may lack source_file; duration within +-2s joins.
+def test_build_claims_duration_fallback_when_no_source_name() -> None:
+    # DVD scans carry no source name; duration within +-2s joins.
     match = _match(
         [
             {
@@ -129,14 +129,14 @@ def test_build_claims_duration_fallback_when_no_source_file() -> None:
     )
     scan = ScanResult(
         disc_type=DiscType.DVD,
-        titles=[ScanTitle(index=0, duration_seconds=5401, source_file=None)],
+        titles=[ScanTitle(index=0, duration_seconds=5401, source_name=None)],
     )
     result = build_claims(match, scan, now=NOW)
     assert result.tracks["0"].role is TrackRole.MAIN
 
 
 def test_build_claims_ambiguous_duration_no_join() -> None:
-    # Two scan titles inside the window and no source_file -> ambiguous, skip.
+    # Two scan titles inside the window and no source_name -> ambiguous, skip.
     match = _match(
         [
             {
@@ -150,16 +150,16 @@ def test_build_claims_ambiguous_duration_no_join() -> None:
     scan = ScanResult(
         disc_type=DiscType.DVD,
         titles=[
-            ScanTitle(index=0, duration_seconds=5400, source_file=None),
-            ScanTitle(index=1, duration_seconds=5401, source_file=None),
+            ScanTitle(index=0, duration_seconds=5400, source_name=None),
+            ScanTitle(index=1, duration_seconds=5401, source_name=None),
         ],
     )
     assert build_claims(match, scan, now=NOW).tracks == {}
 
 
-def test_build_claims_duration_fallback_ignores_with_source_file() -> None:
-    # Duration fallback only considers scan titles with source_file=None.
-    # A scan title WITH a source_file within the duration window must NOT
+def test_build_claims_duration_fallback_ignores_with_source_name() -> None:
+    # Duration fallback only considers scan titles with source_name=None.
+    # A scan title WITH a source_name within the duration window must NOT
     # be joined by duration fallback.
     match = _match(
         [
@@ -174,12 +174,12 @@ def test_build_claims_duration_fallback_ignores_with_source_file() -> None:
     scan = ScanResult(
         disc_type=DiscType.DVD,
         titles=[
-            # This has a source_file, so duration fallback should skip it.
-            ScanTitle(index=0, duration_seconds=5401, source_file="VTS_02_1.VOB"),
+            # This has a source_name, so duration fallback should skip it.
+            ScanTitle(index=0, duration_seconds=5401, source_name="VTS_02_1.VOB"),
         ],
     )
     result = build_claims(match, scan, now=NOW)
-    # No join by duration fallback since the title has a source_file.
+    # No join by duration fallback since the title has a source_name.
     assert result.tracks == {}
 
 
@@ -199,7 +199,7 @@ def test_build_claims_skips_non_dict_title_entry() -> None:
     )
     scan = ScanResult(
         disc_type=DiscType.BLURAY,
-        titles=[ScanTitle(index=0, duration_seconds=7894, source_file="00001.mpls")],
+        titles=[ScanTitle(index=0, duration_seconds=7894, source_name="00001.mpls")],
     )
     result = build_claims(match, scan, now=NOW)
     assert result.tracks["0"].role is TrackRole.MAIN
@@ -219,7 +219,7 @@ def test_build_claims_non_dict_item_treated_as_missing() -> None:
     )
     scan = ScanResult(
         disc_type=DiscType.BLURAY,
-        titles=[ScanTitle(index=0, duration_seconds=7894, source_file="00001.mpls")],
+        titles=[ScanTitle(index=0, duration_seconds=7894, source_name="00001.mpls")],
     )
     result = build_claims(match, scan, now=NOW)
     assert result.tracks["0"].role is TrackRole.OTHER
@@ -241,7 +241,7 @@ def test_build_claims_selects_only_main_and_episodes() -> None:
     )
     scan = ScanResult(
         disc_type=DiscType.BLURAY,
-        titles=[ScanTitle(index=0, duration_seconds=7894, source_file="00001.mpls")],
+        titles=[ScanTitle(index=0, duration_seconds=7894, source_name="00001.mpls")],
     )
     result = build_claims(match, scan, now=NOW)
     assert result.tracks["0"].role is TrackRole.EXTRA
@@ -268,7 +268,7 @@ def test_build_claims_malformed_season_episode_ignored() -> None:
     )
     scan = ScanResult(
         disc_type=DiscType.BLURAY,
-        titles=[ScanTitle(index=0, duration_seconds=7894, source_file="00001.mpls")],
+        titles=[ScanTitle(index=0, duration_seconds=7894, source_name="00001.mpls")],
     )
     result = build_claims(match, scan, now=NOW)
     assert "season" not in result.tracks["0"].model_fields_set
@@ -292,7 +292,7 @@ def test_build_claims_duration_fallback_unparseable_duration_no_join() -> None:
     )
     scan = ScanResult(
         disc_type=DiscType.DVD,
-        titles=[ScanTitle(index=0, duration_seconds=5401, source_file="other.mpls")],
+        titles=[ScanTitle(index=0, duration_seconds=5401, source_name="other.mpls")],
     )
     assert build_claims(match, scan, now=NOW).tracks == {}
 
@@ -319,7 +319,7 @@ def test_build_claims_duplicate_ref_first_entry_wins() -> None:
     )
     scan = ScanResult(
         disc_type=DiscType.BLURAY,
-        titles=[ScanTitle(index=0, duration_seconds=7894, source_file="00001.mpls")],
+        titles=[ScanTitle(index=0, duration_seconds=7894, source_name="00001.mpls")],
     )
     result = build_claims(match, scan, now=NOW)
     assert len(result.tracks) == 1
@@ -431,7 +431,7 @@ _EPISODES_S3 = _episodes("3")
 def _scan(titles: list[dict[str, Any]]) -> ScanResult:
     return ScanResult(
         disc_type=DiscType.BLURAY,
-        titles=[ScanTitle(index=i, duration_seconds=2700, source_file=t["SourceFile"]) for i, t in enumerate(titles)],
+        titles=[ScanTitle(index=i, duration_seconds=2700, source_name=t["SourceFile"]) for i, t in enumerate(titles)],
     )
 
 
@@ -473,3 +473,23 @@ def test_build_claims_ignores_the_season_of_non_episode_titles() -> None:
     ]
     claims = build_claims(_match(titles, kind="series"), _scan(titles), now=NOW)
     assert claims.job.season == 3
+
+
+def test_build_claims_joins_a_real_scan_by_its_playlist_not_makemkvs_output_name() -> None:
+    """A real Blu-ray scan names each title twice: its playlist (TINFO 16) and MakeMKV's output file (TINFO 27)."""
+    match = _match(
+        [
+            {
+                "SourceFile": "00800.mpls",
+                "Duration": "1:06:55",
+                "Comment": "1883 S01E01.mkv",
+                "Item": {"Title": "1883", "Type": "Episode", "Season": "1", "Episode": "1"},
+            }
+        ],
+        kind="series",
+    )
+    scan = ScanResult(
+        disc_type=DiscType.BLURAY,
+        titles=[ScanTitle(index=5, duration_seconds=4015, source_name="00800.mpls", source_file="title_t05.mkv")],
+    )
+    assert build_claims(match, scan, now=NOW).tracks["5"].episode == 1

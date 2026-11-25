@@ -1,9 +1,11 @@
 """TheDiscDB disc-map source: join a snapshot match to the MakeMKV scan and
 propose per-title identity (tier 2).
 
-Join keys, in order: SourceFile == ScanTitle.source_file (case-insensitive);
-else duration within +-2s IF exactly one scan title with source_file=None is
-in the window (ambiguity -> no join; a wrong label is worse than no label).
+Join keys, in order: SourceFile == ScanTitle.source_name, the playlist or
+clip MakeMKV read the title from (TINFO 16, case-insensitive); else duration
+within +-2s IF exactly one scan title with source_name=None is in the window
+(ambiguity -> no join; a wrong label is worse than no label). DVD scans carry
+no source name, so they join by duration.
 """
 
 from __future__ import annotations
@@ -73,19 +75,19 @@ def _valid_entries(match: DiscMatch) -> Iterator[tuple[dict[str, Any], dict[str,
         yield entry, item
 
 
-def _join_scan_title(entry: dict[str, Any], scan: ScanResult, by_source_file: dict[str, ScanTitle]) -> ScanTitle | None:
-    """The scan title an entry describes: the one with its source file, else
-    the one scan title without a source file within DURATION_WINDOW_SECONDS
-    of its duration; None when neither joins."""
+def _join_scan_title(entry: dict[str, Any], scan: ScanResult, by_source_name: dict[str, ScanTitle]) -> ScanTitle | None:
+    """The scan title an entry describes: the one read from its source file,
+    else the one scan title without a source name within
+    DURATION_WINDOW_SECONDS of its duration; None when neither joins."""
     source_file = str(entry.get("SourceFile") or "").lower()
-    scan_title = by_source_file.get(source_file)
+    scan_title = by_source_name.get(source_file)
     if scan_title is not None:
         return scan_title
     want = parse_duration(str(entry.get("Duration") or ""))
     if want is None:
         return None
     candidates = [
-        t for t in scan.titles if t.source_file is None and abs(t.duration_seconds - want) <= DURATION_WINDOW_SECONDS
+        t for t in scan.titles if t.source_name is None and abs(t.duration_seconds - want) <= DURATION_WINDOW_SECONDS
     ]
     return candidates[0] if len(candidates) == 1 else None
 
@@ -140,11 +142,11 @@ def _contributors(match: DiscMatch) -> list[str]:
 
 
 def build_claims(match: DiscMatch, scan: ScanResult, *, now: datetime) -> SourceClaims:
-    by_source_file = {t.source_file.lower(): t for t in scan.titles if t.source_file}
+    by_source_name = {t.source_name.lower(): t for t in scan.titles if t.source_name}
     tracks: dict[str, TrackClaim] = {}
     episode_seasons: set[int] = set()
     for entry, item in _valid_entries(match):
-        scan_title = _join_scan_title(entry, scan, by_source_file)
+        scan_title = _join_scan_title(entry, scan, by_source_name)
         if scan_title is None:
             continue
         ref = str(scan_title.index)

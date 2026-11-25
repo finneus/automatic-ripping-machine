@@ -70,7 +70,7 @@ Identify first reuses a pre-rip job on the same drive with a matching fingerprin
 |---|---|---|
 | Fingerprints stored; a re-scan reuses the pre-rip job; an earlier rip of the disc follows the duplicate policy | `identify`, `disc_dedupe.find_reusable_job_for_disc`, `find_previous_rips` | `on_previously_ripped` |
 | Disc hints (Blu-ray disc title metadata, volume label) → claims plus a cleaned search title | `identity/pipeline.run_disc_hints(sources=enabled_hint_sources(cfg))` | `disc_hint_sources` (a set; the order is fixed, `bd_title` before `label`) |
-| TheDiscDB content-hash match → track claims | the `thediscdb` store lookup, `thediscdb.build_claims` | `thediscdb_enabled` |
+| TheDiscDB content-hash match → track claims (each disc title joins the scan title read from the same playlist, `ScanTitle.source_name`, MakeMKV TINFO 16; a title without one joins by duration) | the `thediscdb` store lookup, `thediscdb.build_claims` | `thediscdb_enabled` |
 | TheDiscDB IMDb id → the ranked sources for the release's kind (`lookup_imdb`); with no capable source the release itself names the disc (provider `thediscdb`) | `dispatcher.has_imdb_lookup`, `dispatcher.identify_from_imdb`, `thediscdb.release_result` | `movie_sources` / `episode_sources` and their keys |
 | CD: disc-id walk | `dispatcher._identify_cd` → `sources_for(cfg, "music", ...)` → `lookup_disc_id` (on an exact disc-ID miss MusicBrainz is asked by TOC, `scan.cd_toc`; several fitting releases are held as a suggestion, not applied) | `music_sources` |
 | Video: CRC64 fingerprint (DVD) | `fingerprint_sources(cfg, ...)` → `lookup_fingerprint` | `crc64service_enabled` |
