@@ -1026,7 +1026,7 @@ def test_identify_miss_stores_the_exact_and_the_fuzzy_attempts() -> None:
     app = _make_app(db, dispatcher=_BothMiss(None, attempts=[_MISS]))
     app.state.thediscdb = _FakeStore(_thediscdb_match())
     scan = _scan_dict("bluray")
-    scan["titles"] = [{"index": 0, "duration_seconds": 7894, "source_file": "00001.mpls"}]
+    scan["titles"] = [{"index": 0, "duration_seconds": 7894, "source_name": "00001.mpls"}]
     scan["fingerprints"] = [{"algo": "thediscdb", "value": "2D61282D8DA5EAC2CA87B451BCE9A055"}]
     out = _identify(app, scan)
     assert out["metadata_json"]["identify_attempts"] == [imdb_miss, _MISS]
@@ -1234,7 +1234,7 @@ def test_identify_thediscdb_match_stamps_map_and_uses_exact_identity() -> None:
     app.state.thediscdb = _FakeStore(_thediscdb_match())
 
     scan = _scan_dict("bluray")
-    scan["titles"] = [{"index": 0, "duration_seconds": 7894, "source_file": "00001.mpls"}]
+    scan["titles"] = [{"index": 0, "duration_seconds": 7894, "source_name": "00001.mpls"}]
     scan["fingerprints"] = [{"algo": "thediscdb", "value": "2D61282D8DA5EAC2CA87B451BCE9A055"}]
 
     with TestClient(app) as client:
@@ -1419,7 +1419,7 @@ def test_identify_thediscdb_match_survives_total_identify_miss() -> None:
     app.state.thediscdb = _FakeStore(_thediscdb_match())
 
     scan = _scan_dict("bluray")
-    scan["titles"] = [{"index": 0, "duration_seconds": 7894, "source_file": "00001.mpls"}]
+    scan["titles"] = [{"index": 0, "duration_seconds": 7894, "source_name": "00001.mpls"}]
     scan["fingerprints"] = [{"algo": "thediscdb", "value": "2D61282D8DA5EAC2CA87B451BCE9A055"}]
 
     with TestClient(app) as client:
