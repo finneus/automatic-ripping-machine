@@ -3215,8 +3215,8 @@ def test_rip_start_titleless_disc_folder_says_folder_not_iso() -> None:
 
 
 def test_rip_start_job_without_drive_is_not_treated_as_an_iso() -> None:
-    """A job with no drive (its drive row was removed) is not an ISO source: a
-    plain 422, and the job is not failed."""
+    """A job with no drive (its drive row was removed) is not an ISO source: it
+    fails with the reason for a disc, not the ISO one."""
     db = FakeSession()
     db.rows["config"] = [_config()]
     db.rows["drives"] = [_virtual_drive()]
@@ -3236,7 +3236,8 @@ def test_rip_start_job_without_drive_is_not_treated_as_an_iso() -> None:
         with TestClient(_make_app(db)) as client:
             r = client.post("/api/ripper/jobs/job_01JZXR7K3M5Q8N4VWA00000001/rip-start", headers=_OWNER_HEADERS)
     assert r.status_code == 422
-    assert job.status == JobStatus.IDENTIFIED
+    assert r.json()["detail"] == ripper_router.DISC_NO_TITLES
+    assert job.status == JobStatus.FAILED
 
 
 # --- per-drive auto-rip override (setup spec D1) ---
