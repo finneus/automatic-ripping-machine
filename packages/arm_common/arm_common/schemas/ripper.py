@@ -72,6 +72,10 @@ class ScanTitle(BaseModel):
     source_file: str | None = None
     # The title's audio languages from the scan (MakeMKV SINFO), terminological ISO 639-2 codes in stream order.
     audio_languages: list[str] = Field(default_factory=list)
+    # MakeMKV's source of the title (TINFO 16): a playlist (`00801.mpls`) or a bare clip (`00294.m2ts`).
+    source_name: str | None = None
+    # The clip ids a playlist plays (TINFO 26), comma-separated: `582,580`.
+    segment_map: str | None = None
 
 
 class DiscFingerprintInput(BaseModel):

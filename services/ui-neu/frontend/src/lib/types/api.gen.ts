@@ -4331,6 +4331,14 @@ export type ScanTitle = {
      * Audio Languages
      */
     audio_languages?: Array<string>;
+    /**
+     * Source Name
+     */
+    source_name?: string | null;
+    /**
+     * Segment Map
+     */
+    segment_map?: string | null;
 };
 
 /**

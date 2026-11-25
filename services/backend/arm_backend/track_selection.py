@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 
+from arm_backend.bare_clip_titles import bare_clip_duplicates
 from arm_common import TrackStatus, DiscType, OutputMode, RipPreset, Track, TrackKind, TrackSelection
 from arm_common.schemas import ScanResult, ScanTitle, TrackFilters
 
@@ -76,8 +77,11 @@ def _variant_rank(title: ScanTitle, preferred: Sequence[str]) -> tuple[tuple[boo
 
 def _main_feature(titles: list[ScanTitle], preferred: Sequence[str]) -> ScanTitle:
     """The main feature: among the titles within `MAIN_FEATURE_TIE_SECONDS` of the longest one (that runs at least
-    `MAIN_FEATURE_MIN_SECONDS` when any does), the best `_variant_rank`; on a full tie the lowest index."""
-    eligible = [t for t in titles if t.duration_seconds >= MAIN_FEATURE_MIN_SECONDS] or titles
+    `MAIN_FEATURE_MIN_SECONDS` when any does), the best `_variant_rank`; on a full tie the lowest index. A bare clip
+    of a listed playlist is never picked while the playlist is there: same film, but without its chapters."""
+    duplicates = bare_clip_duplicates(titles)
+    pool = [t for t in titles if t.index not in duplicates] or titles
+    eligible = [t for t in pool if t.duration_seconds >= MAIN_FEATURE_MIN_SECONDS] or pool
     longest = max(t.duration_seconds for t in eligible)
     variants = [t for t in eligible if longest - t.duration_seconds <= MAIN_FEATURE_TIE_SECONDS]
     return max(variants, key=lambda t: _variant_rank(t, preferred))
@@ -179,10 +183,13 @@ def select_tracks_for_review(
         return whole
 
     kept_refs = {t.source_ref for t in select_tracks(job_id, scan, rip_preset, preferred_audio_languages)}
+    # A bare clip of a listed playlist starts excluded: every title is persisted here, so dropping it from the
+    # default set cannot shift which file belongs to which title.
+    duplicates = bare_clip_duplicates(scan.titles)
     is_cd = scan.disc_type == DiscType.CD
     rows: list[Track] = []
     for title in scan.titles:
         track = _audio_track(job_id, title) if is_cd else _video_track(job_id, title)
-        track.excluded = str(title.index) not in kept_refs
+        track.excluded = str(title.index) not in kept_refs or title.index in duplicates
         rows.append(track)
     return rows
