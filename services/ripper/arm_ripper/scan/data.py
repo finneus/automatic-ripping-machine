@@ -4,7 +4,7 @@ from pathlib import Path
 
 from arm_common import DiscType
 from arm_common.schemas import ScanResult
-from arm_ripper.source import is_folder_source, is_iso_source
+from arm_ripper.source import is_folder_source
 
 logger = logging.getLogger("arm_ripper.scan.data")
 
@@ -19,15 +19,22 @@ _SNIFF_BYTES = 64 * 1024 * 1024
 # for file identifiers (8-bit compressed and UTF-16BE) plus plain ISO 9660.
 _VIDEO_SIGNATURES: tuple[tuple[str, DiscType], ...] = (("BDMV", DiscType.BLURAY), ("VIDEO_TS", DiscType.DVD))
 
+# How long the sniff may read before the disc is classified by its label alone. A drive reads 64 MB in a few seconds;
+# a damaged disc can keep a read in the kernel's retries for minutes.
+SNIFF_TIMEOUT_SECONDS = 60.0
+
 
 def sniff_video_image(path: str) -> DiscType | None:
-    """Classify an image MakeMKV could not open by the directory names it carries.
+    """Classify an image or disc MakeMKV could not open by the directory names it carries.
 
-    A Blu-ray or DVD image that makemkvcon crashes on (seen with a DVDFab
-    UDF 2.50 backup: full BDMV tree, makemkvcon exits with SIGSEGV) must not
-    be filed as a data disc: that hides the title search on the job page and
-    routes it to the data-copy session. Returns BLURAY, DVD, or None when no
-    video-disc directory name appears in the first 64 MB.
+    A Blu-ray or DVD that makemkvcon crashes on (seen with a DVDFab UDF 2.50
+    backup: full BDMV tree, makemkvcon exits with SIGSEGV) or whose scan
+    times out (a UHD whose key MakeMKV is still fetching) must not be filed as
+    a data disc: that hides the title search on the job page and routes it to
+    the data-copy session, which copies the whole disc. The file system is
+    not encrypted, so its names read even when the streams can't be. Returns
+    BLURAY, DVD, or None when no video-disc directory name appears in the
+    first 64 MB.
     """
     try:
         with open(path, "rb") as fh:
@@ -43,9 +50,9 @@ def sniff_video_image(path: str) -> DiscType | None:
 async def scan_data(device_path: str) -> ScanResult:
     """Last-resort fallback: read the volume label via blkid.
 
-    For an ISO source the image is also sniffed for a Blu-ray/DVD directory
-    layout, so an image MakeMKV cannot open still becomes a video job (with no
-    titles) rather than a data disc.
+    An ISO image or a disc in a drive is also sniffed for a Blu-ray/DVD
+    directory layout, so a video disc MakeMKV cannot open or scan in time
+    still becomes a video job (with no titles) rather than a data disc.
     """
     if is_folder_source(device_path):
         return _classify_folder(device_path)
@@ -92,12 +99,18 @@ async def _blkid_stdout(device_path: str) -> bytes | None:
 
 
 async def _sniffed_video_type(device_path: str) -> DiscType | None:
-    """The video disc type an ISO image's directory names reveal, logged when found; None for a device node or an
-    image without a Blu-ray / DVD layout.
+    """The video disc type the directory names of an image or a disc reveal, logged when found; None without a
+    Blu-ray / DVD layout, or when the read outlasts SNIFF_TIMEOUT_SECONDS.
     """
-    if not is_iso_source(device_path):
+    try:
+        kind = await asyncio.wait_for(asyncio.to_thread(sniff_video_image, device_path), timeout=SNIFF_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "reading %s for a video layout took over %ss; classifying it by its label only",
+            device_path,
+            SNIFF_TIMEOUT_SECONDS,
+        )
         return None
-    kind = await asyncio.to_thread(sniff_video_image, device_path)
     if kind is not None:
         logger.info(
             "image %s carries a %s layout; classifying as %s with no titles", device_path, kind.value, kind.value

@@ -79,6 +79,18 @@ ISO_NO_TITLES = (
     'To keep a copy of the image anyway, rip it again with the "ISO: Full-disc dump" session.'
 )
 FOLDER_NO_TITLES = "MakeMKV found no titles in this disc folder. Check that its BDMV or VIDEO_TS tree is complete."
+DISC_NO_TITLES = (
+    "MakeMKV found no titles on this disc: its scan failed or timed out (the ripper log says why). "
+    "Eject the disc and insert it again to scan it again."
+)
+
+
+async def _no_titles_reason(db: AsyncSession, job: Job) -> str:
+    """Why a job whose scan found no titles fails: an image, a disc folder or a disc in a drive had none."""
+    virtual = await _virtual_source_drive(db, job)
+    if virtual is None:
+        return DISC_NO_TITLES
+    return FOLDER_NO_TITLES if virtual.source_kind == DriveSourceKind.FOLDER else ISO_NO_TITLES
 
 
 async def _virtual_source_drive(db: AsyncSession, job: Job) -> Drive | None:
@@ -524,14 +536,15 @@ async def _select_or_fail(
         # 4xx, and the job would otherwise sit IDENTIFIED with nothing to say why.
         await _fail_titleless_source(session, hub, job, str(exc))
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
-    virtual = None if new_tracks or scan.titles else await _virtual_source_drive(session, job)
-    if virtual is not None:
+    if not new_tracks and not scan.titles:
         # MakeMKV found nothing in the image (not even once it was unpacked,
-        # arm_ripper.iso_extract) or in the disc folder. Fail it like a disc with no titles, with
-        # the reason on the job's event; never switch it to a full-disc dump
-        # behind the operator's back (that filed the .iso where a movie was
-        # expected). The ripper then exits and the watchdog retires the drive.
-        reason = FOLDER_NO_TITLES if virtual.source_kind == DriveSourceKind.FOLDER else ISO_NO_TITLES
+        # arm_ripper.iso_extract), in the disc folder, or on the disc (its scan
+        # failed or timed out, and the layout sniff kept it a video disc). Fail
+        # it with the reason on the job's event, so it does not sit IDENTIFIED
+        # with nothing to say why; never switch it to a full-disc dump behind
+        # the operator's back (that filed the .iso where a movie was expected).
+        # An ISO ripper then exits and the watchdog retires the drive.
+        reason = await _no_titles_reason(session, job)
         await _fail_titleless_source(session, hub, job, reason)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=reason)
     if not new_tracks:

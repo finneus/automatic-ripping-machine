@@ -3174,9 +3174,10 @@ async def test_persist_review_tracks_skips_a_dvd_under_the_backup_session() -> N
     assert [t for t in db.added if type(t).__name__ == "Track"] == []
 
 
-def test_rip_start_optical_without_titles_is_still_422() -> None:
-    """The fallback is for ISO sources only: a physical disc that scans to no
-    titles keeps the 422 (the ripper abandons it, as before)."""
+def test_rip_start_optical_without_titles_fails_the_job_with_the_reason() -> None:
+    """#674: a disc in a drive that scans to no titles (its MakeMKV scan failed
+    or timed out) fails with the reason on its event; no ISO fallback, and the
+    ripper still gets the 422 it abandons the disc on."""
     db = FakeSession()
     db.rows["config"] = [_config()]
     db.rows["drives"] = [_drive()]
@@ -3184,10 +3185,17 @@ def test_rip_start_optical_without_titles_is_still_422() -> None:
     db.rows["tracks"] = []
     db.rows["sessions"] = [_session_row(), _iso_dump_session()]
     db.rows["rip_presets"] = [_movie_preset(), _movie_preset("rpr_session"), _iso_dump_preset()]
-    with TestClient(_make_app(db)) as client:
+    hub = _RecordingHub()
+    app = _make_app(db)
+    app.state.ws_hub = hub
+    with TestClient(app) as client:
         r = client.post("/api/ripper/jobs/job_01JZXR7K3M5Q8N4VWA00000001/rip-start", headers=_OWNER_HEADERS)
     assert r.status_code == 422
-    assert "zero tracks" in r.json()["detail"]
+    assert r.json()["detail"] == ripper_router.DISC_NO_TITLES
+    assert db.rows["jobs"][0].status == JobStatus.FAILED
+    assert db.rows["tracks"] == []
+    failed = [e for e in hub.events if e["event_type"] == "rip.failed"]
+    assert [e["payload"]["reason"] for e in failed] == [ripper_router.DISC_NO_TITLES]
 
 
 def test_rip_start_titleless_disc_folder_says_folder_not_iso() -> None:
