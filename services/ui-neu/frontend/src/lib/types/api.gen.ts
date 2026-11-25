@@ -4339,6 +4339,10 @@ export type ScanTitle = {
      * Segment Map
      */
     segment_map?: string | null;
+    /**
+     * Comment
+     */
+    comment?: string | null;
 };
 
 /**

@@ -4,6 +4,7 @@ import pytest
 
 from arm_backend.track_selection import (
     ALL_TRACKS_MIN_SECONDS,
+    MAKEMKV_MAIN_FEATURE_COMMENT,
     MAIN_FEATURE_MIN_SECONDS,
     MAIN_FEATURE_TIE_SECONDS,
     select_tracks,
@@ -327,3 +328,33 @@ def test_review_starts_bare_clips_excluded():
     scan = _bluray((127, "00801.mpls", "294"), (127, "00294.m2ts", None), (5, "00300.mpls", "300"))
     rows = select_tracks_for_review("job_01JZXR7K3M5Q8N4VWA00000001", scan, _preset(TrackSelection.ALL_TRACKS))
     assert [(r.index, r.excluded) for r in rows] == [(0, False), (1, True), (2, False)]
+
+
+def _commented(*titles: tuple[int, str | None]) -> ScanResult:
+    """(minutes, MakeMKV comment) per title, in index order."""
+    return ScanResult(
+        disc_type=DiscType.BLURAY,
+        titles=[ScanTitle(index=i, duration_seconds=m * 60, comment=c) for i, (m, c) in enumerate(titles)],
+    )
+
+
+def test_main_feature_takes_the_title_makemkv_marks_over_a_longer_decoy():
+    """A decoy playlist runs longer than the film; MakeMKV's `FPL_MainFeature` comment names the film."""
+    scan = _commented((130, None), (121, MAKEMKV_MAIN_FEATURE_COMMENT), (131, None))
+    assert _main(scan) == "1"
+
+
+def test_main_feature_ranks_several_marked_titles_by_the_usual_rule():
+    scan = _commented((121, MAKEMKV_MAIN_FEATURE_COMMENT), (140, None), (123, MAKEMKV_MAIN_FEATURE_COMMENT))
+    assert _main(scan) == "2"
+
+
+def test_main_feature_ignores_other_makemkv_comments():
+    scan = _commented((121, "SF_Trailer"), (130, None))
+    assert _main(scan) == "1"
+
+
+def test_review_excludes_the_decoys_next_to_the_marked_title():
+    scan = _commented((130, None), (121, MAKEMKV_MAIN_FEATURE_COMMENT))
+    rows = select_tracks_for_review("job_01JZXR7K3M5Q8N4VWA00000001", scan, _preset(TrackSelection.MAIN_FEATURE))
+    assert [(r.index, r.excluded) for r in rows] == [(0, True), (1, False)]
