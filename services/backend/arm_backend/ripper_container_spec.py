@@ -23,6 +23,13 @@ VIRTUAL_LABEL_KEY = "arm.virtual"
 SPEC_HASH_LABEL_KEY = "arm.spec_hash"
 _DEVICE_CGROUP_RULES = ["b 11:* rmw", "c 21:* rmw"]  # sr* block + sg* char majors (spec §3)
 _HOST_DISK_MOUNT = "/host-disk"
+# MakeMKV keeps what it downloads (the keys of every UHD disc it has opened, the SDF it consumed) in
+# ~/.MakeMKV/_private_data.tar. In the container's writable layer that went with every recreate (an image update, a
+# changed ARM_RIPPER_* setting), and the next UHD disc paid its slow first scan again, which can overrun the scan
+# timeout. A named volume per ripper keeps the folder. One per ripper, because two makemkvcon writing one
+# _private_data.tar would corrupt it. Docker seeds a new volume from the image's folder; the key, keydb and SDF
+# refreshes keep it current from then on.
+_MAKEMKV_HOME = "/home/arm/.MakeMKV"
 # Optical-only env: a virtual (ISO) ripper has no device, no /dev/disk and no cdrom group.
 _OPTICAL_ONLY_ENV = ("ARM_DRIVE_DEV", "ARM_HOST_DISK_ROOT", "ARM_DRIVE_BY_ID", "CDROM_GID")
 
@@ -69,6 +76,11 @@ def container_name(drive: Drive) -> str:
     return f"arm-ripper-{serial_slug}-{drive.id[-6:].lower()}"
 
 
+def makemkv_volume_name(container: str) -> str:
+    """The named volume that holds the ripper `container`'s ~/.MakeMKV across recreates."""
+    return f"{container}-makemkv"
+
+
 def container_spec(settings: Settings, drive: Drive) -> dict[str, Any]:
     """kwargs for `containers.run` — what the ripper needs and nothing more
     (spec §3): no `devices:` bind (the entrypoint pre-creates nodes), no
@@ -99,6 +111,7 @@ def container_spec(settings: Settings, drive: Drive) -> dict[str, Any]:
         s.ARM_HOST_LOGS_PATH: {"bind": "/logs", "mode": "rw"},
         str(certs_root / "arm-ca.crt"): {"bind": "/etc/ssl/arm/arm-ca.crt", "mode": "ro"},
         "/dev/disk": {"bind": _HOST_DISK_MOUNT, "mode": "ro"},
+        makemkv_volume_name(name): {"bind": _MAKEMKV_HOME, "mode": "rw"},
     }
     spec: dict[str, Any] = {
         "image": s.ARM_RIPPER_IMAGE,

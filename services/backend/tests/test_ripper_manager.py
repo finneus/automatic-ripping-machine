@@ -151,7 +151,14 @@ def test_container_spec_matches_spec_section_3() -> None:
         "/host/logs": {"bind": "/logs", "mode": "rw"},
         "/host/certs/arm-ca.crt": {"bind": "/etc/ssl/arm/arm-ca.crt", "mode": "ro"},
         "/dev/disk": {"bind": "/host-disk", "mode": "ro"},
+        "arm-ripper-aaaabbbb000e-jkmnpq-makemkv": {"bind": "/home/arm/.MakeMKV", "mode": "rw"},
     }
+
+
+def test_makemkv_volume_name_is_the_container_name_with_a_suffix() -> None:
+    from arm_backend.ripper_container_spec import makemkv_volume_name
+
+    assert makemkv_volume_name("arm-ripper-iso-0123456789ab") == "arm-ripper-iso-0123456789ab-makemkv"
 
 
 def test_container_spec_omits_by_id_and_ids_when_unset() -> None:
@@ -235,6 +242,7 @@ def test_virtual_container_spec_mounts_only_the_iso() -> None:
     assert spec["volumes"]["/host/raw"] == {"bind": "/raw", "mode": "rw"}
     assert spec["volumes"]["/host/logs"] == {"bind": "/logs", "mode": "rw"}
     assert spec["volumes"]["/host/certs/arm-ca.crt"] == {"bind": "/etc/ssl/arm/arm-ca.crt", "mode": "ro"}
+    assert spec["volumes"][f"{spec['name']}-makemkv"] == {"bind": "/home/arm/.MakeMKV", "mode": "rw"}
     assert "device_cgroup_rules" not in spec
     assert spec["restart_policy"] == {"Name": "no"}
     assert spec["log_config"]["type"] == "json-file"  # inherited from the optical spec

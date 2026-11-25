@@ -161,9 +161,11 @@ docker socket:
   `PUID/PGID/CDROM_GID`, and any `ARM_RIPPER_*` tunables from `.env`;
 - mounts the `ARM_HOST_RAW_PATH` / `ARM_HOST_LOGS_PATH` host paths (which the
   install layout resolves to `./arm/raw`, `./arm/logs`), `arm-ca.crt:ro`,
-  `/dev/disk:/host-disk:ro`.
+  `/dev/disk:/host-disk:ro`, and the named volume `<ripper-name>-makemkv` at
+  `/home/arm/.MakeMKV`, so MakeMKV's downloaded disc keys survive a recreate.
 
-Unenroll stops and removes the container. On every backend boot the `drives`
+Unenroll stops and removes the container; its MakeMKV volume stays and is
+reused if the same drive is enrolled again. On every backend boot the `drives`
 table is reconciled against the labelled containers: missing → created, exited
 → started, orphan → removed, and a container that has drifted is recreated
 when the drive is idle (adopted as-is while it is ripping, and picked up at the
