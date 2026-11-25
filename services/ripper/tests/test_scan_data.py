@@ -1,9 +1,10 @@
-"""scan_data: blkid label fallback plus the video-layout sniff for ISO sources."""
+"""scan_data: blkid label fallback plus the video-layout sniff for ISO images and discs in a drive."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from pathlib import Path
 
 import pytest
@@ -74,13 +75,24 @@ def test_scan_data_iso_without_layout_is_data(tmp_path: Path) -> None:
 
 
 @pytest.mark.usefixtures("blkid_label")
-def test_scan_data_device_node_is_never_sniffed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def _boom(_path: str) -> DiscType | None:
-        raise AssertionError("sniff must not run for a device node")
+def test_scan_data_files_a_disc_with_bdmv_as_a_bluray(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#674: a Blu-ray in a drive whose MakeMKV scan failed is a video job with no titles, not a data disc."""
+    sniffed: list[str] = []
 
-    monkeypatch.setattr(data_module, "sniff_video_image", _boom)
+    def _sniff(path: str) -> DiscType | None:
+        sniffed.append(path)
+        return DiscType.BLURAY
+
+    monkeypatch.setattr(data_module, "sniff_video_image", _sniff)
     out = asyncio.run(data_module.scan_data("/dev/sr0"))
-    assert out.disc_type is DiscType.DATA
+    assert (out.disc_type, out.volume_label, out.titles) == (DiscType.BLURAY, "Half_Baked", [])
+    assert sniffed == ["/dev/sr0"]
+
+
+@pytest.mark.usefixtures("blkid_label")
+def test_scan_data_files_a_disc_without_a_video_layout_as_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(data_module, "sniff_video_image", lambda _path: None)
+    assert asyncio.run(data_module.scan_data("/dev/sr0")).disc_type is DiscType.DATA
 
 
 class _HangingProc:
@@ -189,9 +201,22 @@ def test_sniffed_video_type_none_without_layout(tmp_path: Path, caplog: pytest.L
     assert caplog.records == []
 
 
-def test_sniffed_video_type_skips_sniff_for_device_node(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _boom(_path: str) -> DiscType | None:
-        raise AssertionError("sniff must not run for a device node")
+def test_sniffed_video_type_gives_up_on_a_read_that_hangs(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A damaged disc can hold the read in the kernel's retries; the disc is then classified by its label alone."""
+    release = threading.Event()
 
-    monkeypatch.setattr(data_module, "sniff_video_image", _boom)
-    assert asyncio.run(data_module._sniffed_video_type("/dev/sr0")) is None
+    def _hang(_path: str) -> DiscType | None:
+        release.wait(5)
+        return DiscType.BLURAY
+
+    monkeypatch.setattr(data_module, "sniff_video_image", _hang)
+    monkeypatch.setattr(data_module, "SNIFF_TIMEOUT_SECONDS", 0.05)
+    with caplog.at_level(logging.WARNING, logger="arm_ripper.scan.data"):
+        kind = asyncio.run(data_module._sniffed_video_type("/dev/sr0"))
+    release.set()
+    assert kind is None
+    assert [r.getMessage() for r in caplog.records] == [
+        "reading /dev/sr0 for a video layout took over 0.05s; classifying it by its label only"
+    ]
