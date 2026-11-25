@@ -15,6 +15,8 @@ The key path is `/home/arm/.MakeMKV/settings.conf` inside the container. The Doc
 
 `/home/arm/.MakeMKV` is a named Docker volume, one per ripper (`<ripper-name>-makemkv`). It keeps what MakeMKV downloads, above all the keys of every UHD disc it has opened (in `_private_data.tar`), when the backend recreates the ripper after an image update or a settings change. Without it the first UHD disc after every recreate pays the slow first scan again (several minutes, which can overrun the scan timeout). Docker seeds a new volume from the image; the key, keydb and SDF refreshes keep it current after that. Unenrolling a drive leaves its volume in place (a few MB); re-enrolling the same drive reuses it, and `docker volume rm <ripper-name>-makemkv` removes it.
 
+The image ships a Java runtime, so MakeMKV can run a Blu-ray's BD-J menu code. On discs with decoy playlists (dozens of near-identical playlists, some longer than the film) it uses that to find the real film and comments it `FPL_MainFeature`. The main-feature preset follows that pick instead of taking the longest title.
+
 ## Verifying the key after start
 
 Ripper containers are named `arm-ripper-<serial>-<id>` and carry the label `arm.drive_id`:

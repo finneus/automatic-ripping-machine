@@ -63,6 +63,7 @@ _TINFO_FIELDS: dict[int, tuple[str, Callable[[str], int | str | None]]] = {
     16: ("source_name", str),
     26: ("segment_map", str),
     27: ("source_file", str),
+    49: ("comment", str),
 }
 
 
@@ -112,6 +113,7 @@ def _scan_title(idx: int, entry: dict[str, object], streams: _Streams) -> ScanTi
         source_file=_text(entry, "source_file"),
         source_name=_text(entry, "source_name"),
         segment_map=_text(entry, "segment_map"),
+        comment=_text(entry, "comment"),
         audio_languages=_audio_languages(streams),
     )
 

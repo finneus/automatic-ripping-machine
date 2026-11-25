@@ -76,6 +76,9 @@ class ScanTitle(BaseModel):
     source_name: str | None = None
     # The clip ids a playlist plays (TINFO 26), comma-separated: `582,580`.
     segment_map: str | None = None
+    # MakeMKV's comment on the title (TINFO 49). On a disc with decoy playlists MakeMKV, when it can run the disc's
+    # Java, comments the real film `FPL_MainFeature`.
+    comment: str | None = None
 
 
 class DiscFingerprintInput(BaseModel):

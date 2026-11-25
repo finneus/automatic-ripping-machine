@@ -8,6 +8,8 @@ MAIN_FEATURE_MIN_SECONDS = 45 * 60
 # Titles this close to the longest are variants of the film: a UHD can carry it once per language group.
 MAIN_FEATURE_TIE_SECONDS = 60
 ALL_TRACKS_MIN_SECONDS = 60
+# MakeMKV's comment on the film of a disc whose decoy playlists it sorted out (it needs the disc's Java for that).
+MAKEMKV_MAIN_FEATURE_COMMENT = "FPL_MainFeature"
 
 
 class TrackSelectionError(ValueError):
@@ -78,9 +80,12 @@ def _variant_rank(title: ScanTitle, preferred: Sequence[str]) -> tuple[tuple[boo
 def _main_feature(titles: list[ScanTitle], preferred: Sequence[str]) -> ScanTitle:
     """The main feature: among the titles within `MAIN_FEATURE_TIE_SECONDS` of the longest one (that runs at least
     `MAIN_FEATURE_MIN_SECONDS` when any does), the best `_variant_rank`; on a full tie the lowest index. A bare clip
-    of a listed playlist is never picked while the playlist is there: same film, but without its chapters."""
+    of a listed playlist is never picked while the playlist is there: same film, but without its chapters. When
+    MakeMKV comments a title `MAKEMKV_MAIN_FEATURE_COMMENT`, only such titles are candidates: a decoy playlist can be
+    the longest title on the disc."""
     duplicates = bare_clip_duplicates(titles)
     pool = [t for t in titles if t.index not in duplicates] or titles
+    pool = [t for t in pool if t.comment == MAKEMKV_MAIN_FEATURE_COMMENT] or pool
     eligible = [t for t in pool if t.duration_seconds >= MAIN_FEATURE_MIN_SECONDS] or pool
     longest = max(t.duration_seconds for t in eligible)
     variants = [t for t in eligible if longest - t.duration_seconds <= MAIN_FEATURE_TIE_SECONDS]

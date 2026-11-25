@@ -211,7 +211,7 @@ def test_to_int_parses_ints_and_returns_none_otherwise():
 
 
 def test_tinfo_fields_covers_exactly_the_known_codes():
-    assert set(_TINFO_FIELDS) == {8, 9, 11, 16, 26, 27}
+    assert set(_TINFO_FIELDS) == {8, 9, 11, 16, 26, 27, 49}
 
 
 def test_later_unparseable_chapter_count_keeps_the_earlier_valid_one():
@@ -365,3 +365,16 @@ def test_reads_the_title_source_and_segment_map():
     _label, titles, _disc_type = parse_makemkvcon_info(lines)
     assert (titles[0].source_name, titles[0].segment_map) == ("00801.mpls", "582,580")
     assert (titles[1].source_name, titles[1].segment_map) == ("00294.m2ts", None)
+
+
+def test_reads_makemkvs_comment_on_a_title():
+    """TINFO 49: MakeMKV comments the film of a decoy-playlist disc `FPL_MainFeature`; other titles have none."""
+    lines = [
+        'TINFO:0,9,0,"2:00:47"',
+        'TINFO:0,16,0,"00202.mpls"',
+        'TINFO:0,49,0,"FPL_MainFeature"',
+        'TINFO:1,9,0,"2:10:03"',
+        'TINFO:1,16,0,"00203.mpls"',
+    ]
+    _label, titles, _disc_type = parse_makemkvcon_info(lines)
+    assert [t.comment for t in titles] == ["FPL_MainFeature", None]
