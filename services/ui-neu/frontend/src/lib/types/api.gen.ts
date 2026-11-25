@@ -4314,6 +4314,14 @@ export type ScanTitle = {
      * Source File
      */
     source_file?: string | null;
+    /**
+     * Source Name
+     */
+    source_name?: string | null;
+    /**
+     * Segment Map
+     */
+    segment_map?: string | null;
 };
 
 /**

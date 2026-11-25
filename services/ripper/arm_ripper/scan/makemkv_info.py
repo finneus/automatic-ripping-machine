@@ -36,6 +36,8 @@ _TINFO_FIELDS: dict[int, tuple[str, Callable[[str], int | str | None]]] = {
     8: ("chapter_count", _to_int),
     9: ("duration_seconds", _parse_duration),
     11: ("size_bytes", _to_int),
+    16: ("source_name", str),
+    26: ("segment_map", str),
     27: ("source_file", str),
 }
 
@@ -78,14 +80,21 @@ def _scan_title(idx: int, entry: dict[str, object]) -> ScanTitle | None:
         return None
     chapter_obj = entry.get("chapter_count")
     size_obj = entry.get("size_bytes")
-    source_obj = entry.get("source_file")
     return ScanTitle(
         index=idx,
         duration_seconds=duration_obj,
         chapter_count=chapter_obj if isinstance(chapter_obj, int) else None,
         size_bytes=size_obj if isinstance(size_obj, int) else None,
-        source_file=source_obj if isinstance(source_obj, str) else None,
+        source_file=_text(entry, "source_file"),
+        source_name=_text(entry, "source_name"),
+        segment_map=_text(entry, "segment_map"),
     )
+
+
+def _text(entry: dict[str, object], name: str) -> str | None:
+    """A collected text field of a title, or None when it was not reported."""
+    value = entry.get(name)
+    return value if isinstance(value, str) else None
 
 
 class _InfoParser:

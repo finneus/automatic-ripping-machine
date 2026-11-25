@@ -223,3 +223,40 @@ def test_review_folder_preset_persists_the_single_backup():
     scan = ScanResult(disc_type=DiscType.BLURAY, titles=[ScanTitle(index=0, duration_seconds=7200)])
     tracks = select_tracks_for_review("job_01JZXR7K3M5Q8N4VWA00000001", scan, _backup_preset())
     assert [(t.kind, t.excluded) for t in tracks] == [(TrackKind.DISC_BACKUP, False)]
+
+
+def _bluray(*titles: tuple[int, str, str | None]) -> ScanResult:
+    """(minutes, source, segment map) per title, in index order."""
+    return ScanResult(
+        disc_type=DiscType.BLURAY,
+        titles=[
+            ScanTitle(index=i, duration_seconds=m * 60, source_name=src, segment_map=seg)
+            for i, (m, src, seg) in enumerate(titles)
+        ],
+    )
+
+
+def test_main_feature_never_picks_the_bare_clip_of_a_listed_playlist():
+    """#693: the clip is listed first and as long as the playlist, but the playlist carries the chapters."""
+    scan = _bluray((127, "00294.m2ts", None), (127, "00801.mpls", "294"), (2, "01167.mpls", "582"))
+    tracks = select_tracks("job_01JZXR7K3M5Q8N4VWA00000001", scan, _preset(TrackSelection.MAIN_FEATURE))
+    assert [t.index for t in tracks] == [1]
+
+
+def test_main_feature_falls_back_to_the_clips_when_every_title_is_one():
+    scan = _bluray((127, "00294.m2ts", None), (127, "00294.m2ts", None))
+    # No playlist plays them, so neither is a duplicate; the first longest wins as before.
+    tracks = select_tracks("job_01JZXR7K3M5Q8N4VWA00000001", scan, _preset(TrackSelection.MAIN_FEATURE))
+    assert [t.index for t in tracks] == [0]
+
+
+def test_all_tracks_keeps_bare_clips_so_files_still_pair_with_titles():
+    scan = _bluray((127, "00801.mpls", "294"), (127, "00294.m2ts", None))
+    tracks = select_tracks("job_01JZXR7K3M5Q8N4VWA00000001", scan, _preset(TrackSelection.ALL_TRACKS))
+    assert [t.index for t in tracks] == [0, 1]
+
+
+def test_review_starts_bare_clips_excluded():
+    scan = _bluray((127, "00801.mpls", "294"), (127, "00294.m2ts", None), (5, "00300.mpls", "300"))
+    rows = select_tracks_for_review("job_01JZXR7K3M5Q8N4VWA00000001", scan, _preset(TrackSelection.ALL_TRACKS))
+    assert [(r.index, r.excluded) for r in rows] == [(0, False), (1, True), (2, False)]

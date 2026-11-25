@@ -1,3 +1,4 @@
+from arm_backend.bare_clip_titles import bare_clip_duplicates
 from arm_common import TrackStatus, DiscType, OutputMode, RipPreset, Track, TrackKind, TrackSelection
 from arm_common.schemas import ScanResult, ScanTitle, TrackFilters
 
@@ -63,15 +64,22 @@ def _apply_custom_filters(titles: list[ScanTitle], filters: TrackFilters) -> lis
     return candidates
 
 
+def _main_feature(titles: list[ScanTitle]) -> ScanTitle:
+    """The longest title of at least MAIN_FEATURE_MIN_SECONDS, else the longest. A bare clip of a listed playlist
+    is never picked while the playlist is there: same film, but without its chapters."""
+    duplicates = bare_clip_duplicates(titles)
+    pool = [t for t in titles if t.index not in duplicates] or titles
+    eligible = [t for t in pool if t.duration_seconds >= MAIN_FEATURE_MIN_SECONDS]
+    return max(eligible or pool, key=lambda t: t.duration_seconds)
+
+
 def _select_video(scan: ScanResult, rip_preset: RipPreset, job_id: str) -> list[Track]:
     titles = scan.titles
     if not titles:
         return []
     rule = rip_preset.track_selection
     if rule == TrackSelection.MAIN_FEATURE:
-        eligible = [t for t in titles if t.duration_seconds >= MAIN_FEATURE_MIN_SECONDS]
-        chosen = max(eligible or titles, key=lambda t: t.duration_seconds)
-        return [_video_track(job_id, chosen)]
+        return [_video_track(job_id, _main_feature(titles))]
     if rule == TrackSelection.ALL_TRACKS:
         return [_video_track(job_id, t) for t in titles if t.duration_seconds >= ALL_TRACKS_MIN_SECONDS]
     if rule == TrackSelection.ARCHIVE:
@@ -156,10 +164,13 @@ def select_tracks_for_review(job_id: str, scan: ScanResult, rip_preset: RipPrese
         return whole
 
     kept_refs = {t.source_ref for t in select_tracks(job_id, scan, rip_preset)}
+    # A bare clip of a listed playlist starts excluded: every title is persisted here, so dropping it from the
+    # default set cannot shift which file belongs to which title.
+    duplicates = bare_clip_duplicates(scan.titles)
     is_cd = scan.disc_type == DiscType.CD
     rows: list[Track] = []
     for title in scan.titles:
         track = _audio_track(job_id, title) if is_cd else _video_track(job_id, title)
-        track.excluded = str(title.index) not in kept_refs
+        track.excluded = str(title.index) not in kept_refs or title.index in duplicates
         rows.append(track)
     return rows

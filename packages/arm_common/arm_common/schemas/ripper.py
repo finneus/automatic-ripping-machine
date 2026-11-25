@@ -70,6 +70,10 @@ class ScanTitle(BaseModel):
     chapter_count: int | None = None
     size_bytes: int | None = None
     source_file: str | None = None
+    # MakeMKV's source of the title (TINFO 16): a playlist (`00801.mpls`) or a bare clip (`00294.m2ts`).
+    source_name: str | None = None
+    # The clip ids a playlist plays (TINFO 26), comma-separated: `582,580`.
+    segment_map: str | None = None
 
 
 class DiscFingerprintInput(BaseModel):

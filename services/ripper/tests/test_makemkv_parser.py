@@ -211,7 +211,7 @@ def test_to_int_parses_ints_and_returns_none_otherwise():
 
 
 def test_tinfo_fields_covers_exactly_the_known_codes():
-    assert set(_TINFO_FIELDS) == {8, 9, 11, 27}
+    assert set(_TINFO_FIELDS) == {8, 9, 11, 16, 26, 27}
 
 
 def test_later_unparseable_chapter_count_keeps_the_earlier_valid_one():
@@ -315,3 +315,17 @@ def test_scan_titles_sorts_by_index_and_drops_titles_without_duration():
         ScanTitle(index=0, duration_seconds=10),
         ScanTitle(index=2, duration_seconds=30),
     ]
+
+
+def test_reads_the_title_source_and_segment_map():
+    """#693: TINFO 16 names the playlist or clip a title comes from, TINFO 26 the clips a playlist plays."""
+    lines = [
+        'TINFO:0,9,0,"2:06:51"',
+        'TINFO:0,16,0,"00801.mpls"',
+        'TINFO:0,26,0,"582,580"',
+        'TINFO:1,9,0,"2:06:51"',
+        'TINFO:1,16,0,"00294.m2ts"',
+    ]
+    _label, titles, _disc_type = parse_makemkvcon_info(lines)
+    assert (titles[0].source_name, titles[0].segment_map) == ("00801.mpls", "582,580")
+    assert (titles[1].source_name, titles[1].segment_map) == ("00294.m2ts", None)
