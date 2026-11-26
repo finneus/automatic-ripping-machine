@@ -79,7 +79,20 @@ FEATURED_NOTIFY_FIELDS: dict[str, tuple[str, ...]] = {
     "mailtos": ("host", "format", "from", "name", "smtp", "mode", "reply", "pgp", "pgpkey", "to", "cc", "bcc"),
     "ifttt": ("webhook_id", "events", "format"),
     "gotifys": ("token", "host", "format", "priority"),
-    "matrixs": ("host", "token", "to", "format", "image", "discovery", "hsreq", "mode", "path", "version", "msgtype", "e2ee"),
+    "matrixs": (
+        "host",
+        "token",
+        "to",
+        "format",
+        "image",
+        "discovery",
+        "hsreq",
+        "mode",
+        "path",
+        "version",
+        "msgtype",
+        "e2ee",
+    ),
 }
 
 # Namespaces whose ids these checks hold to a declared field.

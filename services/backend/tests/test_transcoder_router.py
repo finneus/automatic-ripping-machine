@@ -571,6 +571,8 @@ def test_request_raw_root_reads_the_settings() -> None:
     from arm_backend.config import settings
 
     assert transcoder_router.request_raw_root() == settings.RAW_ROOT
+
+
 def test_register_returns_no_preset_when_session_has_none() -> None:
     db = FakeSession()
     _seed(db)

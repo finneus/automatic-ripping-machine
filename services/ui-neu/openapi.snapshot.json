@@ -148,7 +148,7 @@
           "ripper"
         ],
         "summary": "Get Ripper Config",
-        "description": "Subset of the global Config the ripper reads on each disc insert to\ndecide whether to fire its scan/identify/rip pipeline. Cheap enough to\npoll per-insert; avoids the WS-event invalidation dance for a single\nboolean.\n\n`drive_id` resolves auto-rip per drive: a non-null Drive.drive_mode\noverrides the global Config.auto_rip_on_insert default; NULL follows it\nRippers that omit it get the global value.",
+        "description": "Subset of the global Config the ripper reads on each disc insert to\ndecide whether to fire its scan/identify/rip pipeline. Cheap enough to\npoll per-insert; avoids the WS-event invalidation dance for a single\nboolean.\n\n`drive_id` resolves auto-rip per drive: a non-null Drive.drive_mode\noverrides the global Config.auto_rip_on_insert default; NULL follows it\nRippers that omit it get the global value.\nThe drive's `prescan_timeout` override rides along as `scan_timeout_seconds`.",
         "operationId": "get_ripper_config_api_ripper_config_get",
         "security": [
           {
@@ -1212,7 +1212,7 @@
           "jobs"
         ],
         "summary": "Delete All Jobs",
-        "description": "Hard-delete terminal jobs. An optional body filters the set:\n`job_ids` (only those), `status` (only that JobStatus), or neither\n(all terminal jobs \u2014 legacy). `job_ids` wins over `status`. Non-terminal\njobs are always skipped and reported in `skipped_non_terminal`.\n\n`delete_raw=true` runs the filesystem cleanup (raw rmtree + media file\nunlink + empty-parent prune) for each deleted job. Cleanups are\nindependent \u2014 a failure on one job is logged and the next continues.",
+        "description": "Hard-delete terminal jobs. An optional body filters the set:\n`job_ids` (only those), `status` (only that JobStatus), or neither\n(all terminal jobs \u2014 legacy). `job_ids` wins over `status`. Non-terminal\njobs and jobs still transcoding are always skipped and reported in\n`skipped_non_terminal`.\n\n`delete_raw=true` runs the filesystem cleanup (raw rmtree + media file\nunlink + empty-parent prune) for each deleted job. Cleanups are\nindependent \u2014 a failure on one job is logged and the next continues.",
         "operationId": "delete_all_jobs_api_jobs_delete",
         "security": [
           {
@@ -1353,7 +1353,7 @@
           "jobs"
         ],
         "summary": "Delete Job",
-        "description": "Hard-delete a Job. Tracks, fingerprints, session_applications,\ntranscode_tasks, and events cascade via Postgres FK ondelete=CASCADE.\n\nRefuses non-terminal jobs (CREATED / AWAITING_USER_ID / IDENTIFIED /\nRIPPING) \u2014 caller must `POST /abandon` first if they want a job in\nflight gone. This keeps the active-rip cancel logic in one place.\n\n`delete_raw=true` also unlinks every transcode output recorded for the\njob and rmtrees `/raw/{job_id}/`. Backend mounts both bind paths\ndirectly, so the cleanup runs synchronously here \u2014 no WS roundtrip,\nno dependency on the ripper container being up. Per-file unlink for\nmedia (sibling re-rips share the `media/<Title>/` parent dir); empty\nparents are pruned after the unlink phase.",
+        "description": "Hard-delete a Job. Tracks, fingerprints, session_applications,\ntranscode_tasks, and events cascade via Postgres FK ondelete=CASCADE.\n\nRefuses non-terminal jobs (CREATED / AWAITING_USER_ID / IDENTIFIED /\nRIPPING) \u2014 caller must `POST /abandon` first if they want a job in\nflight gone. This keeps the active-rip cancel logic in one place.\nLikewise refuses a job with a running transcode (in progress, or queued\nwith a GPU claimed for it): its tasks are cancelled through\n`/api/transcodes/{id}`, which stops the container. A queued task the\ndispatcher holds does not block the delete.\n\n`delete_raw=true` also unlinks every transcode output recorded for the\njob and rmtrees `/raw/{job_id}/`. Backend mounts both bind paths\ndirectly, so the cleanup runs synchronously here \u2014 no WS roundtrip,\nno dependency on the ripper container being up. Per-file unlink for\nmedia (sibling re-rips share the `media/<Title>/` parent dir); empty\nparents are pruned after the unlink phase.",
         "operationId": "delete_job_api_jobs__job_id__delete",
         "security": [
           {
@@ -4463,6 +4463,33 @@
             }
           }
         }
+      }
+    },
+    "/api/transcodes/cleanup": {
+      "post": {
+        "tags": [
+          "transcodes"
+        ],
+        "summary": "Cleanup Finished Transcodes",
+        "description": "Delete every finished (done or failed) transcode task, each as `DELETE /{task_id}` deletes one; queued and\nrunning tasks are left alone. Backs the Files page's \"Clean up transcoder jobs\" action.",
+        "operationId": "cleanup_finished_transcodes_api_transcodes_cleanup_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscodeCleanupResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserJWT": []
+          }
+        ]
       }
     },
     "/api/gpus": {
@@ -8397,7 +8424,7 @@
           "skipped_non_terminal"
         ],
         "title": "BulkDeleteJobsResponse",
-        "description": "DELETE /api/jobs response. `deleted_ids` lists the jobs whose DB\nrows were removed; `skipped_non_terminal` lists job IDs that were\nrefused because they were still in flight (caller should abandon\nthem first if they really want them gone)."
+        "description": "DELETE /api/jobs response. `deleted_ids` lists the jobs whose DB\nrows were removed; `skipped_non_terminal` lists job IDs that were\nrefused because they were still in flight: ripping (abandon them\nfirst) or transcoding (cancel their transcodes first)."
       },
       "CatalogField": {
         "properties": {
@@ -9099,10 +9126,34 @@
             ],
             "title": "Manual Wait Seconds"
           },
+          "preferred_audio_languages": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Audio Languages"
+          },
           "on_previously_ripped": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/PreviouslyRippedAction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_retention_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetentionPolicy"
               },
               {
                 "type": "null"
@@ -9361,6 +9412,13 @@
             "type": "integer",
             "title": "Manual Wait Seconds"
           },
+          "preferred_audio_languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Preferred Audio Languages"
+          },
           "on_previously_ripped": {
             "$ref": "#/components/schemas/PreviouslyRippedAction"
           },
@@ -9512,6 +9570,7 @@
           "ripping_paused",
           "hold_for_review",
           "manual_wait_seconds",
+          "preferred_audio_languages",
           "on_previously_ripped",
           "default_retention_policy",
           "notification_apprise_urls",
@@ -16105,6 +16164,17 @@
             "type": "integer",
             "title": "Manual Wait Seconds",
             "default": 60
+          },
+          "scan_timeout_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Timeout Seconds"
           }
         },
         "type": "object",
@@ -16248,6 +16318,46 @@
               }
             ],
             "title": "Source File"
+          },
+          "audio_languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Audio Languages"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "segment_map": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Map"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
           }
         },
         "type": "object",
@@ -18465,6 +18575,28 @@
         ],
         "title": "TrackView"
       },
+      "TranscodeCleanupResult": {
+        "properties": {
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "errors"
+        ],
+        "title": "TranscodeCleanupResult",
+        "description": "What `POST /api/transcodes/cleanup` removed: the number of finished tasks deleted, and any per-task errors."
+      },
       "TranscodePresetCreateRequest": {
         "properties": {
           "name": {
@@ -18766,6 +18898,11 @@
           "percent": {
             "type": "number",
             "title": "Percent"
+          },
+          "tasks_active": {
+            "type": "integer",
+            "title": "Tasks Active",
+            "default": 0
           }
         },
         "type": "object",
@@ -18777,7 +18914,7 @@
           "percent"
         ],
         "title": "TranscodeProgressSummary",
-        "description": "Per-job transcode-phase summary surfaced on `JobView`, derived by\naggregating ALL of a job's `SessionApplication` rows. `state` is the\njob-level rollup (see `_summarize_transcode_progress`): `transcoding`\nwhile any session is in-flight, `done`/`done_partial`/`failed` once all\nare terminal. `None` on `JobView` means no session was applied (the job\nis `ripped`/awaiting action). Live per-task percent flows on the\n`transcode.progress.{task_id}` WS topic; `percent` here is a poll-time\nmean of the job's task `progress_pct`."
+        "description": "Per-job transcode-phase summary surfaced on `JobView`, derived by\naggregating ALL of a job's `SessionApplication` rows. `state` is the\njob-level rollup (see `_summarize_transcode_progress`): `transcoding`\nwhile any session is in-flight, `done`/`done_partial`/`failed` once all\nare terminal. `None` on `JobView` means no session was applied (the job\nis `ripped`/awaiting action). Live per-task percent flows on the\n`transcode.progress.{task_id}` WS topic; `percent` here is a poll-time\nmean of the job's task `progress_pct`. `tasks_active` counts the tasks\nthat `transcode_task_blocks_job_delete` (in progress, or queued with a GPU\nclaimed): while it is above 0 the job cannot be deleted."
       },
       "TranscodeStatsView": {
         "properties": {

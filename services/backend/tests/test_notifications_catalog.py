@@ -215,6 +215,8 @@ def test_real_telegram_channel_composes_a_url_apprise_sends_to_the_chat() -> Non
     sender = apprise.Apprise()
     assert sender.add(url)
     assert [chat for chat, _topic in sender[0].targets] == [-1001234, 987]
+
+
 def test_featured_notify_fields_match_the_live_apprise_catalog() -> None:
     """The docs registry declares each featured service's fields without importing
     Apprise; this holds that list to the catalog the real Apprise plugins build."""

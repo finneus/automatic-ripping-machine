@@ -86,6 +86,8 @@ def _targets_field(plugin_cls: Any) -> dict[str, Any] | None:
         return None
     label = str(tokens["targets"].get("name", "Targets"))
     return {"key": "to", "label": f"{label} (comma-separated)", "type": "string", "private": False, "required": False}
+
+
 # Apprise's wiki page for a service, for a plugin that names no setup page.
 _APPRISE_WIKI_PAGE = "https://github.com/caronc/apprise/wiki/Notify_{service_id}"
 
