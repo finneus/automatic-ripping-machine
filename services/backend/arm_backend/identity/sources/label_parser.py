@@ -31,7 +31,15 @@ _DISC_WORD_RE = re.compile(r"[\s-]DISC[\s-](" + "|".join(_WORD_NUMBERS) + r")$",
 # from an explicit disc marker (see `part_marker_only` below).
 _DISC_RE = re.compile(r"[\s-](P|D|DISC)[\s-]?(\d+)(?:[\s-]OF[\s-]?(\d+))?$", re.IGNORECASE)
 _SEASON_KEYWORD_RE = re.compile(r"[\s-]SEASON[\s-]?(\d+)$", re.IGNORECASE)
+_SEASON_WORD_RE = re.compile(r"[\s-]SEASON[\s-](" + "|".join(_WORD_NUMBERS) + r")$", re.IGNORECASE)
 _SEASON_RE = re.compile(r"[\s-]S(\d+)$", re.IGNORECASE)
+# A trailing bracket holding nothing but a SEASON / DISC marker, as BDMT disc
+# names write it ("Suits: Season Seven\n(Disc 4)", "... [Disc Two]"). Only a
+# whole marker is unwrapped, so "(1979)" or "(Director's Cut)" stay title text.
+_MARKER_NUMBER = r"(?:\d+|" + "|".join(_WORD_NUMBERS) + r")"
+_BRACKETED_MARKER_RE = re.compile(
+    r"\s*[(\[]\s*((?:SEASON|DISC)[\s-]?" + _MARKER_NUMBER + r"(?:[\s-]OF[\s-]?\d+)?)\s*[)\]]$", re.IGNORECASE
+)
 # Bounded space run: an unbounded ` *` before SKU backtracks polynomially (ReDoS).
 # `\d*\b` (rather than a bare `\w*`) requires SKU to be its own token,
 # optionally followed by digits — "SKU1234" still strips, but "Skull" (which
@@ -82,6 +90,13 @@ def _clean_label(raw: str) -> str:
     for suffix in _BLURAY_SUFFIXES:
         s = s.replace(suffix, "")
     s = s.replace(".", " ").rstrip()
+    return _unwrap_bracketed_marker(s)
+
+
+def _unwrap_bracketed_marker(s: str) -> str:
+    """`... (Disc 4)` -> `... Disc 4`, so the trailing-marker rules below see it; any other text is returned as is."""
+    if m := _BRACKETED_MARKER_RE.search(s):
+        return f"{s[: m.start()]} {m.group(1)}"
     return s
 
 
@@ -107,7 +122,9 @@ def _split_disc(s: str) -> tuple[str, int | None, int | None, bool]:
 
 
 def _split_season(s: str) -> tuple[str, int | None]:
-    """A trailing `SEASON <n>` or `S<n>` marker: (the text before it, season). With no marker: (s, None)."""
+    """A trailing `SEASON <n>`, `SEASON <word>` or `S<n>` marker: (the text before it, season). With no marker: (s, None)."""
+    if m := _SEASON_WORD_RE.search(s):
+        return s[: m.start()], _WORD_NUMBERS[m.group(1).lower()]
     if m := _SEASON_KEYWORD_RE.search(s) or _SEASON_RE.search(s):
         return s[: m.start()], _bounded(m.group(1), 0, _SEASON_MAX)
     return s, None
