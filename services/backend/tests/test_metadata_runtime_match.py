@@ -16,6 +16,7 @@ from arm_backend.metadata.dispatcher import MetadataDispatcher, _main_feature_se
 from arm_backend.metadata.runtime_match import (
     CLEARLY_CLOSER_SECONDS,
     MAX_OFF_SECONDS,
+    is_rated,
     normalized_title,
     runtime_choice,
     same_title_pool,
@@ -79,6 +80,34 @@ def test_pool_matches_the_original_title_and_keeps_a_differently_named_first_hit
     assert [r["id"] for r in same_title_pool(results, "Batman")] == [1, 2]
 
 
+# TMDb's real answer for the UHD "Star Wars: A New Hope": an unrated fan film first, the film second (as "Star Wars").
+_NEW_HOPE = [
+    _hit("Cardboard Star Wars: A New Hope", 2026, 1797334, votes=0),
+    _hit("Star Wars", 1977, 11, votes=23227),
+    _hit("Maclunkey Treasure Island: A Live Staged Reading of Star Wars - A New Hope", 2025, 1822693, votes=0),
+]
+
+
+def test_pool_behind_an_unrated_first_hit_takes_rated_hits_whose_title_is_part_of_the_query() -> None:
+    assert [r["id"] for r in same_title_pool(_NEW_HOPE, "Star Wars: A New Hope")] == [1797334, 11]
+
+
+def test_pool_behind_an_unrated_first_hit_takes_a_rated_hit_that_holds_the_query() -> None:
+    results = [_hit("Heat", 2026, 1, votes=0), _hit("Heat (Director's Cut)", 1995, 2), _hit("Frozen", 2013, 3)]
+    assert [r["id"] for r in same_title_pool(results, "Heat")] == [1, 2]
+
+
+def test_pool_behind_a_rated_first_hit_still_wants_the_query_title() -> None:
+    results = [_hit("Star Wars: A New Hope", 2026, 1), _hit("Star Wars", 1977, 11, votes=23227)]
+    assert [r["id"] for r in same_title_pool(results, "Star Wars: A New Hope")] == [1]
+
+
+def test_is_rated() -> None:
+    assert is_rated(_hit("A", 2000, 1)) is True
+    assert is_rated(_hit("A", 2000, 1, votes=0)) is False
+    assert is_rated({"id": 1}) is False
+
+
 # --- runtime_choice --------------------------------------------------------------------------------------------------
 
 
@@ -104,6 +133,16 @@ def test_choice_keeps_the_first_hit_when_the_best_fit_is_still_too_far_off() -> 
 
 def test_choice_keeps_the_first_hit_when_its_runtime_is_unknown() -> None:
     assert runtime_choice([None, 117], 117 * 60) == 0
+
+
+def test_choice_replaces_an_unrated_first_hit_with_no_runtime_by_a_close_fit() -> None:
+    assert runtime_choice([None, 121], 125 * 60, first_rated=False) == 1
+
+
+def test_choice_keeps_an_unrated_first_hit_when_nothing_fits_closely() -> None:
+    disc = 125 * 60
+    assert runtime_choice([None, (disc + MAX_OFF_SECONDS + 60) // 60], disc, first_rated=False) == 0
+    assert runtime_choice([None, None], disc, first_rated=False) == 0
 
 
 def test_choice_ignores_namesakes_with_unknown_runtimes() -> None:
@@ -142,6 +181,16 @@ async def test_near_picks_the_remake_that_fits_the_disc(http_client) -> None:
     _details({861: 113, 64635: 130})
     hit = await TMDBClient("k", http_client).search_movie_near("Total Recall", None, 130 * 60)
     assert (hit.title, hit.year, hit.payload["id"]) == ("Total Recall", 2012, 64635)
+
+
+@respx.mock
+async def test_near_takes_the_film_over_an_unrated_fan_film_that_ranks_first(http_client) -> None:
+    """The disc "Star Wars: A New Hope" (125 min) is TMDb's "Star Wars" (121 min), not the 52 min fan film TMDb
+    ranks first."""
+    respx.get(_SEARCH).mock(return_value=httpx.Response(200, json={"results": _NEW_HOPE}))
+    _details({1797334: 52, 11: 121})
+    hit = await TMDBClient("k", http_client).search_movie_near("Star Wars: A New Hope", None, 7485)
+    assert (hit.title, hit.year, hit.payload["id"]) == ("Star Wars", 1977, 11)
 
 
 @respx.mock

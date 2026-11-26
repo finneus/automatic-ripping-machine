@@ -7,7 +7,7 @@ import httpx
 
 from arm_backend.config import settings
 from arm_backend.metadata.base import LookupError, LookupTimeout, MetadataResult, json_object
-from arm_backend.metadata.runtime_match import runtime_choice, same_title_pool
+from arm_backend.metadata.runtime_match import is_rated, runtime_choice, same_title_pool
 from arm_backend.metadata.years import year_from
 
 logger = logging.getLogger("arm_backend.metadata.tmdb")
@@ -108,7 +108,7 @@ class TMDBClient:
         if len(pool) < 2:
             return pool[0]
         runtimes = await asyncio.gather(*(self._runtime_minutes(hit.get("id")) for hit in pool))
-        chosen = pool[runtime_choice(runtimes, runtime_seconds)]
+        chosen = pool[runtime_choice(runtimes, runtime_seconds, first_rated=is_rated(pool[0]))]
         if chosen is not pool[0]:
             logger.info(
                 "tmdb: %r (%s) fits the disc's %d min main feature better than the first hit %r (%s)",
