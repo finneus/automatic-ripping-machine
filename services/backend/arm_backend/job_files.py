@@ -87,7 +87,11 @@ def _remove_disc_backup(path: Path, media_root: Path) -> bool:
 
 
 def _remove_media_output(path: Path, media_root: Path) -> bool:
-    """Remove one media output. True when it counts as removed; an OSError skips it."""
+    """Remove one media output. True when it counts as removed; an OSError skips it. A path that leaves media_root
+    by name (an absolute or `..` output path) is never touched; a symlinked sub-folder inside it is followed."""
+    if not _inside_by_name(path, media_root):
+        logger.warning("delete: refusing media output outside media_root path=%s", path)
+        return False
     try:
         if path.is_dir() and not path.is_symlink():
             return _remove_disc_backup(path, media_root)
@@ -99,6 +103,13 @@ def _remove_media_output(path: Path, media_root: Path) -> bool:
         logger.warning("delete: media delete failed path=%s err=%s", path, exc)
         return False
     return True
+
+
+def _inside_by_name(path: Path, media_root: Path) -> bool:
+    """Whether `path`, with its `..` segments folded, names something strictly inside `media_root`."""
+    folded = Path(os.path.normpath(path))
+    root = Path(os.path.normpath(media_root))
+    return folded != root and folded.is_relative_to(root)
 
 
 def _prune_emptied_parents(parents: set[Path], media_root: Path) -> int:

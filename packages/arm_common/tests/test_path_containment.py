@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from arm_common.path_containment import is_within, safe_join
+from arm_common.path_containment import is_relative_path, is_within, safe_join
 
 
 def test_safe_join_returns_the_resolved_path_inside_base(tmp_path: Path) -> None:
@@ -47,3 +47,13 @@ def test_is_within(tmp_path: Path) -> None:
     assert is_within(tmp_path, tmp_path, allow_root=True)
     assert not is_within(tmp_path / ".." / "x", tmp_path)
     assert not is_within(tmp_path.parent, tmp_path, allow_root=True)
+
+
+@pytest.mark.parametrize("relative", ["a.mkv", "Movies/Film (2008)/Film.mkv", "", ".", "a/./b", "Film..mkv"])
+def test_is_relative_path_accepts_a_path_that_stays_under_its_root(relative: str) -> None:
+    assert is_relative_path(relative) is True
+
+
+@pytest.mark.parametrize("relative", ["/a.mkv", "/", "..", "../a.mkv", "a/../../b", "a/.."])
+def test_is_relative_path_refuses_an_absolute_path_or_a_dotdot_segment(relative: str) -> None:
+    assert is_relative_path(relative) is False

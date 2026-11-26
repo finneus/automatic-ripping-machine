@@ -98,6 +98,12 @@ they always have a value.
 The built-in sessions use `{year?}`. A session you cloned from a built-in
 before this change keeps `{year}`; edit its output path to add the `?`.
 
+The path is always relative to the media folder: it may not start with `/` or
+contain a `..` segment, and the session form refuses one that does. A session
+saved before that check keeps working only while its paths stay inside the media
+folder; applying it to a job whose path would leave the folder fails with that
+reason, and ARM never writes, previews or deletes a file outside it.
+
 ## Diagnostics
 
 **Settings → System** includes a read-only diagnostics section (service status

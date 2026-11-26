@@ -14,6 +14,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 
 from arm_backend.config import Settings
 from arm_backend.passthrough_executor import IN_PROCESS_CLAIMANT, execute_passthrough_task
@@ -843,3 +845,22 @@ async def test_progress_publisher_stops_after_a_failed_write(monkeypatch: Any, c
 
     assert db.call_log[-1] == "rollback" and sent == []
     assert "progress write failed task_id=txt_1" in caplog.text
+
+
+@pytest.mark.parametrize("output_path", ["/etc/film.mkv", "../film.mkv"])
+async def test_task_output_path_leaving_the_media_root_fails_without_moving(tmp_path: Path, output_path: str) -> None:
+    media_root = tmp_path / "media"
+    raw = tmp_path / "raw" / "job1" / "t0.mkv"
+    raw.parent.mkdir(parents=True)
+    raw.write_bytes(b"data")
+
+    db = _db(track_output_path=str(raw), task_output_path=output_path)
+    hub, _sent = _hub_with_recorder()
+    task = db.rows["transcode_tasks"][0]
+
+    ok = await execute_passthrough_task(db, task, hub, _settings(MEDIA_ROOT=str(media_root)))
+
+    assert ok is False
+    assert task.status == TranscodeTaskStatus.FAILED
+    assert task.last_error == f"task output_path {output_path!r} leaves the media root"
+    assert raw.exists()
