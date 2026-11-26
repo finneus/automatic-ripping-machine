@@ -104,6 +104,13 @@ describe('HeaderActions auto-start toggle', () => {
 		expect(autoStart()).toHaveAttribute('aria-checked', 'false');
 	});
 
+	it('reads Hold for review when paused with the review hold on', () => {
+		setDash({ ripping_enabled: false, review_hold: true });
+		render();
+		expect(autoStart()).toHaveTextContent('Hold for review');
+		expect(autoStart()).toHaveAttribute('aria-checked', 'false');
+	});
+
 	it('is hidden when the database is unavailable', () => {
 		setDash({ db_available: false });
 		render();

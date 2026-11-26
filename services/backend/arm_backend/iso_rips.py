@@ -18,6 +18,7 @@ from arm_backend.config import settings
 from arm_backend.file_browser import PathError
 from arm_backend.iso_library import library_configured
 from arm_backend.job_abandon import abandon_job_transition
+from arm_backend.pause_policy import PAUSED_DETAIL, refuses_new_jobs
 from arm_backend.ripper_manager import RipperManager, RipperManagerError
 from arm_backend.constants import CONFIG_SINGLETON_ID
 from arm_backend.virtual_drive_lifecycle import (
@@ -126,8 +127,8 @@ async def create_iso_rip(
         # Same rule as the ripper's identify: paused with the review hold off
         # refuses new discs, but paused with the hold on (the UI Pause toggle)
         # parks them for review, so an ISO rip starts and waits there too.
-        if cfg is not None and cfg.ripping_paused and not cfg.hold_for_review:
-            raise IsoRipError(409, "ripping is paused; no new jobs accepted")
+        if refuses_new_jobs(cfg):
+            raise IsoRipError(409, PAUSED_DETAIL)
         rel_norm = await asyncio.to_thread(lambda: str(target.relative_to(Path(settings.ISO_INGRESS_ROOT).resolve())))
         if session_id is not None:
             session = (await db.execute(select(Session).where(col(Session.id) == session_id))).scalar_one_or_none()
