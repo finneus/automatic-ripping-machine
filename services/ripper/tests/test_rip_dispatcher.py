@@ -234,10 +234,10 @@ def _stub_rip_disc(
         on_title_done: Any | None = None,
         hash_outputs: bool = True,
         stop: Any | None = None,
-        title_index: int | None = None,
+        title: int | None = None,
     ) -> RipDiscResult:
         if captured is not None:
-            captured["title_index"] = title_index
+            captured["title"] = title
             captured["hash_outputs"] = hash_outputs
             captured["device_path"] = device_path
             captured["output_dir"] = output_dir
@@ -1965,7 +1965,7 @@ async def test_rip_all_rips_the_one_kept_title_on_its_own(monkeypatch, tmp_path)
 
     started, done = await _rip_recording(tmp_path, [_track(0, excluded=True), _track(1), _track(2, excluded=True)])
 
-    assert captured["title_index"] == 1
+    assert captured["title"] == 1
     assert captured["eligible_source_indexes"] == [1]
     assert started == ["trk_1"]
     assert done == [("trk_1", True, None)]
@@ -1984,7 +1984,7 @@ async def test_rip_all_names_the_main_feature_when_only_it_was_selected(monkeypa
 
     _started, done = await _rip_recording(tmp_path, [_track(3)])
 
-    assert captured["title_index"] == 3
+    assert captured["title"] == 3
     assert captured["eligible_source_indexes"] == [3]
     assert done == [("trk_3", True, None)]
 
@@ -1998,7 +1998,7 @@ async def test_rip_all_rips_all_titles_when_two_are_kept(monkeypatch, tmp_path):
 
     await _rip_recording(tmp_path, [_track(0), _track(1), _track(2, excluded=True)])
 
-    assert captured["title_index"] is None
+    assert captured["title"] is None
     assert captured["eligible_source_indexes"] == [0, 1, 2]
 
 
@@ -2016,7 +2016,7 @@ async def test_rip_all_single_title_still_fails_a_kept_title_below_minlength(mon
         tmp_path, [_track(0), _track(1, duration_seconds=60), _track(2, excluded=True)]
     )
 
-    assert captured["title_index"] == 0
+    assert captured["title"] == 0
     assert started == ["trk_0", "trk_1"]
     # The good file is reported once hashed, so after the short title's failure.
     outcomes = {track_id: (ok, error) for track_id, ok, error in done}

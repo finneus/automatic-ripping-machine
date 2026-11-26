@@ -33,6 +33,7 @@ async def rip_all(
     skip_track_ids: Collection[str] = (),
     drive_lost: Callable[[], bool] | None = None,
     hash_titles: bool = True,
+    per_title: bool = False,
 ) -> None:
     """Rip every track in `tracks` and invoke the lifecycle callbacks.
 
@@ -43,6 +44,8 @@ async def rip_all(
     title's file is cut short, so it is reported unfinished and `stop` is set.
     A resume passes every track so the `mkv all` output positions still line
     up, and the skipped tracks get no callbacks (their new files are deleted).
+    `per_title` (a resume's choice, see `resume_plan`) rips only the unsettled
+    titles instead, one invocation each.
 
     Per disc_type:
     - DVD / BD: one `makemkvcon mkv ... all` invocation for the whole
@@ -78,6 +81,7 @@ async def rip_all(
             skip_track_ids=skip_track_ids,
             drive_lost=drive_lost,
             hash_titles=hash_titles,
+            per_title=per_title,
         )
         return
 
