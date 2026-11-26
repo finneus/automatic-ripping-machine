@@ -35,6 +35,15 @@ def test_every_down_revision_resolves() -> None:
     assert revisions, "no migrations found"
 
 
+def test_every_revision_id_fits_the_version_column() -> None:
+    """``alembic_version.version_num`` is VARCHAR(32). A longer revision id renders
+    and walks fine offline, but ``alembic upgrade head`` fails when it stamps the id,
+    so the backend crash-loops at startup."""
+    script = _script_directory()
+    too_long = [rev.revision for rev in script.walk_revisions("base", "heads") if len(rev.revision) > 32]
+    assert too_long == []
+
+
 def test_single_linear_head() -> None:
     """Two heads mean two migrations claim the same parent — ``alembic
     upgrade head`` refuses to run until a merge revision reconciles them."""
