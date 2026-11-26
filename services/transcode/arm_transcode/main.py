@@ -38,6 +38,7 @@ from arm_common.schemas import (
 )
 from arm_common.enums import GpuVendor, TranscodeTool
 from arm_common.fileops import atomic_output, transcode_none
+from arm_common.path_containment import is_relative_path
 
 from arm_transcode.api_client import BackendClient
 from arm_transcode.config import TranscoderConfig
@@ -365,7 +366,11 @@ async def _encode_and_report(
 ) -> int:
     """Encode the registered task under a heartbeat, report the outcome to the Backend, and return the exit code."""
     raw_input = Path(registered.raw_input_path)
-    final_output = Path(registered.media_root) / (registered.task.output_path or "")
+    output_path = registered.task.output_path or ""
+    if not is_relative_path(output_path):
+        await api.fail(task_id, last_error=f"output_path {output_path!r} leaves the media root")
+        return 1
+    final_output = Path(registered.media_root) / output_path
     preset = registered.transcode_preset
     tool = preset.tool if preset is not None else TranscodeTool.NONE
     duration = registered.source_track.duration_seconds

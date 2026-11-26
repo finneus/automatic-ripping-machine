@@ -47,6 +47,7 @@ from arm_common import (
 )
 from arm_common.models import Track, TranscodeTask
 from arm_common.models._columns import enum_value_str
+from arm_common.path_containment import is_relative_path
 from arm_common.schemas import (
     AbandonJobRequest,
     ApplySessionRequest,
@@ -425,7 +426,7 @@ async def _resolve_media_outputs(db: AsyncSession, job_id: str) -> list[Path]:
             .where(col(TranscodeTask.output_path).is_not(None))
         )
     ).all()
-    return [media_root / r[0] for r in rows]
+    return [media_root / r[0] for r in rows if is_relative_path(r[0])]
 
 
 def _delete_per_job_log(job_id: str) -> None:

@@ -2,7 +2,7 @@ import pytest
 
 
 from arm_backend.path_template import TemplateValidationError
-from arm_backend.transcode_apply import _build_track_ctx, compute_outputs
+from arm_backend.transcode_apply import _build_track_ctx, compute_outputs, stat_exists
 from arm_common import (
     ContainerFormat,
     DiscType,
@@ -90,6 +90,23 @@ def test_compute_outputs_empty_token_raises() -> None:
     tp = _movie_preset()
     with pytest.raises(TemplateValidationError, match="resolved empty"):
         compute_outputs(job, [_video_track(1)], sess, tp)
+
+
+@pytest.mark.parametrize("template", ["/{title} ({year})/{title}.{ext}", "../{title}/{title}.{ext}"])
+def test_compute_outputs_refuses_a_stored_template_that_leaves_the_media_root(template: str) -> None:
+    """A session saved before validation refused such templates still can't route a write outside the media root."""
+    with pytest.raises(TemplateValidationError, match="leaves the media root"):
+        compute_outputs(_job(), [_video_track(1)], _movie_session(template), _movie_preset())
+
+
+def test_stat_exists_never_looks_outside_the_media_root(tmp_path) -> None:
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    (tmp_path / "outside.mkv").write_text("x")
+    (media_root / "inside.mkv").write_text("x")
+    assert stat_exists(media_root, "inside.mkv") is True
+    assert stat_exists(media_root, "../outside.mkv") is False
+    assert stat_exists(media_root, str(tmp_path / "outside.mkv")) is False
 
 
 def test_compute_outputs_drops_empty_optional_year() -> None:

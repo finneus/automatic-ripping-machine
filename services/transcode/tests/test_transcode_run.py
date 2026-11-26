@@ -225,6 +225,15 @@ async def test_no_output_path_falls_back_to_media_root(h: Harness) -> None:
     assert h.complete_kwargs["output_path"] == "."
 
 
+@pytest.mark.parametrize("output_path", ["/etc/film.mkv", "../film.mkv", "Movies/../../film.mkv"])
+async def test_an_output_path_leaving_the_media_root_fails_the_task_unencoded(h: Harness, output_path: str) -> None:
+    h.response.task.output_path = output_path
+    assert await m.run() == 1
+    assert h.fail_kwargs == [(("t1",), {"last_error": f"output_path {output_path!r} leaves the media root"})]
+    assert h.encoder_kwargs == {}
+    assert "complete" not in h.names()
+
+
 async def test_cancel_requested_reports_cancelled_and_returns_zero(h: Harness) -> None:
     h.encoder_exc = m.CancelRequested()
     assert await m.run() == 0
