@@ -279,6 +279,50 @@ def test_main_feature_full_tie_keeps_the_first_title():
     assert _main(_variants((8590, ["eng"], 100), (8590, ["eng"], 100))) == "0"
 
 
+def _localised(*languages: str | None) -> ScanResult:
+    """A Blu-ray with the film once per language, same audio and size, told apart only by the title language: the
+    Star Wars UHDs carry four such playlists (opening text and credits in English, French, German, Italian)."""
+    return ScanResult(
+        disc_type=DiscType.BLURAY,
+        titles=[
+            ScanTitle(
+                index=i,
+                duration_seconds=8407,
+                audio_languages=["eng", "fra", "deu", "ita"],
+                size_bytes=56_000,
+                metadata_language=lang,
+            )
+            for i, lang in enumerate(languages)
+        ],
+    )
+
+
+def test_main_feature_picks_the_variant_whose_title_language_is_preferred():
+    scan = _localised("fra", "ita", "deu", "eng")
+    assert _main(scan, ("deu", "eng")) == "2"
+    assert _main(scan, ("eng", "deu")) == "3"
+
+
+def test_main_feature_title_language_falls_through_the_preference_order():
+    assert _main(_localised("fra", "eng", None), ("deu", "eng")) == "1"
+
+
+def test_main_feature_title_language_never_outweighs_the_audio_languages():
+    """A variant with a preferred audio language beats one that only carries a preferred title language."""
+    scan = ScanResult(
+        disc_type=DiscType.BLURAY,
+        titles=[
+            ScanTitle(index=0, duration_seconds=8407, audio_languages=["eng"], size_bytes=1, metadata_language="deu"),
+            ScanTitle(index=1, duration_seconds=8407, audio_languages=["deu"], size_bytes=1, metadata_language="eng"),
+        ],
+    )
+    assert _main(scan, ("deu", "eng")) == "1"
+
+
+def test_main_feature_without_a_preference_ignores_the_title_language():
+    assert _main(_localised("fra", "deu")) == "0"
+
+
 def test_main_feature_variant_window_is_measured_from_the_longest_title():
     near = 9000 - MAIN_FEATURE_TIE_SECONDS
     far = 9000 - MAIN_FEATURE_TIE_SECONDS - 1

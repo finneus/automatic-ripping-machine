@@ -211,7 +211,7 @@ def test_to_int_parses_ints_and_returns_none_otherwise():
 
 
 def test_tinfo_fields_covers_exactly_the_known_codes():
-    assert set(_TINFO_FIELDS) == {8, 9, 11, 16, 26, 27, 49}
+    assert set(_TINFO_FIELDS) == {8, 9, 11, 16, 26, 27, 28, 49}
 
 
 def test_later_unparseable_chapter_count_keeps_the_earlier_valid_one():
@@ -378,3 +378,19 @@ def test_reads_makemkvs_comment_on_a_title():
     ]
     _label, titles, _disc_type = parse_makemkvcon_info(lines)
     assert [t.comment for t in titles] == ["FPL_MainFeature", None]
+
+
+def test_reads_a_titles_metadata_language_as_a_terminological_code():
+    """TINFO 28: the language a title belongs to. A disc with one playlist per language group tells them apart by it;
+    MakeMKV may report the bibliographic form (`ger`), and an empty value is no language."""
+    lines = [
+        'TINFO:0,9,0,"2:20:07"',
+        'TINFO:0,28,0,"ger"',
+        'TINFO:1,9,0,"2:20:07"',
+        'TINFO:1,28,0,"eng"',
+        'TINFO:2,9,0,"2:20:07"',
+        'TINFO:2,28,0,""',
+        'TINFO:3,9,0,"2:20:07"',
+    ]
+    _label, titles, _disc_type = parse_makemkvcon_info(lines)
+    assert [t.metadata_language for t in titles] == ["deu", "eng", None, None]

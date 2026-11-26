@@ -55,6 +55,11 @@ def _audio_languages(streams: _Streams) -> list[str]:
     return out
 
 
+def _to_language(value: str) -> str | None:
+    """A language code MakeMKV reported, as its terminological ISO 639-2 form; None when empty."""
+    return terminological(value) if value else None
+
+
 # TINFO attribute code -> (title field, parser). A field is set only when its parser returns a value.
 _TINFO_FIELDS: dict[int, tuple[str, Callable[[str], int | str | None]]] = {
     8: ("chapter_count", _to_int),
@@ -63,6 +68,7 @@ _TINFO_FIELDS: dict[int, tuple[str, Callable[[str], int | str | None]]] = {
     16: ("source_name", str),
     26: ("segment_map", str),
     27: ("source_file", str),
+    28: ("metadata_language", _to_language),
     49: ("comment", str),
 }
 
@@ -114,6 +120,7 @@ def _scan_title(idx: int, entry: dict[str, object], streams: _Streams) -> ScanTi
         source_name=_text(entry, "source_name"),
         segment_map=_text(entry, "segment_map"),
         comment=_text(entry, "comment"),
+        metadata_language=_text(entry, "metadata_language"),
         audio_languages=_audio_languages(streams),
     )
 
