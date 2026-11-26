@@ -46,7 +46,7 @@ class DriveLifecycle(StrEnum):
 
     DETECTED = "detected"  # seen by the scanner, no decision yet
     IGNORED = "ignored"  # operator said "not ARM's" — never nag, never prune
-    ENROLLED = "enrolled"  # operator said "ARM's" — a ripper serves it (Plan 3 spawns it)
+    ENROLLED = "enrolled"  # operator said "ARM's" — a ripper serves it
     RETIRED = "retired"  # a virtual (ISO) drive whose one-shot rip has ended
 
 
@@ -152,7 +152,7 @@ RESOLVABLE_PRESERVE_JOB_STATUSES: frozenset[JobStatus] = frozenset(
 )
 RESOLVABLE_JOB_STATUSES: frozenset[JobStatus] = RESOLVABLE_PROMOTE_JOB_STATUSES | RESOLVABLE_PRESERVE_JOB_STATUSES
 # Session apply (POST /jobs/{id}/transcode). OK = resolve outputs now (or park
-# as no_tracks pre-rip); PARK = park as waiting_identify until identity lands.
+# as no_tracks pre-rip); PARK = park as waiting_identify until the job is identified.
 # RIPPING is pre-rip for apply: the session parks and rip-complete fans it out,
 # so a session can still be chosen once the review countdown has started the rip.
 APPLY_OK_JOB_STATUSES: frozenset[JobStatus] = frozenset(
@@ -194,8 +194,7 @@ class TrackKind(StrEnum):
 
 class TrackRole(StrEnum):
     """What one title on a disc is. Set by identity sources via the resolver
-    (arm_backend.identity) or by the operator; replaces the old free-text
-    role and the per-track video_type."""
+    (arm_backend.identity) or by the operator."""
 
     MAIN = "main"
     EPISODE = "episode"
@@ -210,6 +209,19 @@ class MediaType(StrEnum):
     MUSIC = "music"
     DATA = "data"
     ISO = "iso"
+
+
+# Encoding settings do not depend on whether a video is a film or an episode,
+# so a movie and a TV transcode preset are interchangeable.
+VIDEO_MEDIA_TYPES: frozenset[MediaType] = frozenset({MediaType.MOVIE, MediaType.TV})
+
+
+def transcode_preset_media_types(session_media_type: MediaType) -> frozenset[MediaType]:
+    """The transcode preset media types that fit a session of this media type: both video types for a movie or TV
+    session, else its own."""
+    if session_media_type in VIDEO_MEDIA_TYPES:
+        return VIDEO_MEDIA_TYPES
+    return frozenset({session_media_type})
 
 
 class TrackSelection(StrEnum):
@@ -372,7 +384,7 @@ class MakemkvSdfState(StrEnum):
 
 
 class UserRole(StrEnum):
-    """Fixed two-account model (spec 2026-07-12-basic-user-management-design).
+    """Fixed two-account model.
 
     ADMIN — the single writer; the only account that can hold a session.
     GUEST — read-everything/write-nothing; acquired by having no token at all
@@ -387,7 +399,7 @@ class UserRole(StrEnum):
 
 
 class SetupStep(StrEnum):
-    """First-run setup walkthrough steps, in walkthrough order (setup spec 2026-10-01).
+    """First-run setup walkthrough steps, in walkthrough order.
 
     Stored as VARCHAR keys inside Config.setup_progress JSON, validated in the app.
     """
