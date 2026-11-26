@@ -49,6 +49,7 @@ FEATURED_NOTIFY_FIELDS: dict[str, tuple[str, ...]] = {
         "token_a",
         "token_b",
         "token_c",
+        "to",
         "format",
         "image",
         "footer",
@@ -56,10 +57,11 @@ FEATURED_NOTIFY_FIELDS: dict[str, tuple[str, ...]] = {
         "timestamp",
         "mode",
     ),
-    "tgram": ("bot_token", "format", "image", "detect", "silent", "preview", "topic", "mdv", "content"),
-    "pbul": ("accesstoken", "format"),
-    "pover": ("user_key", "token", "format", "priority", "sound", "url", "url_title", "retry", "expire"),
+    "tgram": ("bot_token", "to", "format", "image", "detect", "silent", "preview", "topic", "mdv", "content"),
+    "pbul": ("accesstoken", "to", "format"),
+    "pover": ("user_key", "token", "to", "format", "priority", "sound", "url", "url_title", "retry", "expire"),
     "ntfys": (
+        "to",
         "format",
         "attach",
         "image",
@@ -77,7 +79,7 @@ FEATURED_NOTIFY_FIELDS: dict[str, tuple[str, ...]] = {
     "mailtos": ("host", "format", "from", "name", "smtp", "mode", "reply", "pgp", "pgpkey", "to", "cc", "bcc"),
     "ifttt": ("webhook_id", "events", "format"),
     "gotifys": ("token", "host", "format", "priority"),
-    "matrixs": ("host", "token", "format", "image", "discovery", "hsreq", "mode", "path", "version", "msgtype", "e2ee"),
+    "matrixs": ("host", "token", "to", "format", "image", "discovery", "hsreq", "mode", "path", "version", "msgtype", "e2ee"),
 }
 
 # Namespaces whose ids these checks hold to a declared field.
