@@ -35,10 +35,31 @@ NOW = datetime(2026, 9, 28, tzinfo=timezone.utc)
         ("PLANET_EARTH_DISC_TWO", LabelHints("planet earth", None, 2, None)),
         ("MOVIE_16X9_SKU1234", LabelHints("movie", None, None, None)),
         ("Some Movie - Blu-rayTM", LabelHints("some movie", None, None, None)),
+        # BDMT disc names: the season spelled out, the disc marker in brackets
+        # and often on its own line.
+        ("Suits: Season Seven\n(Disc 4)", LabelHints("suits", 7, 4, None)),
+        ("The Wire: Season Three [Disc Two]", LabelHints("the wire", 3, 2, None)),
+        ("Friends (Disc 2 of 4)", LabelHints("friends", None, 2, 4)),
+        ("Lost (Season 4)", LabelHints("lost", 4, None, None)),
+        ("THE_OFFICE_SEASON_TWO", LabelHints("the office", 2, None, None)),
     ],
 )
 def test_parse_label_extracts_hints(raw: str, expected: LabelHints) -> None:
     assert parse_label(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "title"),
+    [
+        ("Alien (1979)", "alien (1979)"),
+        ("Se7en (Director's Cut)", "se7en (director's cut)"),
+        ("Planet (Disc)", "planet (disc)"),
+    ],
+)
+def test_parse_label_leaves_other_brackets_alone(raw: str, title: str) -> None:
+    """Only a trailing bracket that holds a whole season / disc marker is
+    unwrapped; a year or an edition in brackets stays title text."""
+    assert parse_label(raw) == LabelHints(title, None, None, None)
 
 
 @pytest.mark.parametrize(

@@ -6,10 +6,11 @@ from __future__ import annotations
 from typing import Any
 
 from arm_common import DiscType
+from arm_common.schemas import BdDiscMeta
 from arm_common.schemas.identity import JobClaim, SourceClaims
 
 from arm_backend.identity.sources.base import Capability, JobContext
-from arm_backend.identity.sources.label_parser import parse_label
+from arm_backend.identity.sources.label_parser import LabelHints, parse_label
 
 
 class BdTitleSource:
@@ -34,8 +35,7 @@ class BdTitleSource:
         fields: dict[str, Any] = {}
         if hints.season is not None:
             fields["season"] = hints.season
-        disc = meta.set_number if meta.set_number is not None else hints.disc_number
-        total = meta.num_sets if meta.num_sets is not None else hints.disc_total
+        disc, total = _set_position(meta, hints)
         if disc is not None:
             fields["disc_number"] = disc
         if total is not None:
@@ -43,6 +43,18 @@ class BdTitleSource:
         if hints.title and not hints.part_marker_only:
             fields["title"] = hints.title
         return SourceClaims(run_at=ctx.now, status="ok", inputs=self.inputs(ctx), job=JobClaim(**fields))
+
+
+def _set_position(meta: BdDiscMeta, hints: LabelHints) -> tuple[int | None, int | None]:
+    """The disc's (number, total) in its set. The BDMT set position wins,
+    unless the name names a disc beyond the BDMT total: then that position is
+    a placeholder (studios stamp `1 of 1` on every disc of a box) and the
+    name's own disc / total markers are used instead."""
+    if hints.disc_number is not None and meta.num_sets is not None and hints.disc_number > meta.num_sets:
+        return hints.disc_number, hints.disc_total
+    disc = meta.set_number if meta.set_number is not None else hints.disc_number
+    total = meta.num_sets if meta.num_sets is not None else hints.disc_total
+    return disc, total
 
 
 BD_TITLE = BdTitleSource()
