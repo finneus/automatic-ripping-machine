@@ -723,6 +723,27 @@ def test_delete_job_files_refuses_a_folder_outside_media_root(tmp_path: Path) ->
     assert outside.exists()
 
 
+def test_delete_job_files_refuses_a_backup_folder_whose_parent_links_out_of_media_root(tmp_path: Path) -> None:
+    """Inside media_root by name, outside once resolved: a disc backup folder is only removed when it really lives
+    there (a file in a linked sub-folder is removed; a folder's tree is not)."""
+    raw_root = tmp_path / "raw"
+    raw_root.mkdir()
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "Iron Man (2008)" / "BDMV").mkdir(parents=True)
+    (media_root / "linked").symlink_to(elsewhere, target_is_directory=True)
+
+    counters = job_files.delete_job_files(
+        "job_01JZXR7K3M5Q8N4VWA00000002",
+        [media_root / "linked" / "Iron Man (2008)"],
+        raw_root=raw_root,
+        media_root=media_root,
+    )
+    assert counters["media_files_removed"] == 0
+    assert (elsewhere / "Iron Man (2008)" / "BDMV").exists()
+
+
 @pytest.mark.parametrize("spelling", ["root", "dotdot"])
 def test_delete_job_files_never_removes_media_root_itself(tmp_path: Path, spelling: str) -> None:
     raw_root = tmp_path / "raw"

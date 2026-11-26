@@ -13,10 +13,12 @@ from arm_backend.auth import (
     require_service_token,
 )
 from arm_backend.session_drain import after_rip, cancel_parked_applications
+from arm_backend.config import settings
 from arm_backend.crash_recovery import reset_job_for_recovery
 from arm_backend.db import get_session
 from arm_backend.metadata import MetadataDispatcher
 from arm_backend.identify_flow import DiscAlreadyRippedError, IdentifyFlow, RippingPausedError, UnknownDriveError
+from arm_backend.pause_policy import PAUSED_DETAIL
 from arm_backend.rip_preset_resolution import (
     RipPresetUnavailable,
     load_routed_session,
@@ -63,6 +65,7 @@ from arm_common.schemas import (
     RegisterRequest,
     RipperConfigView,
     RipperHeartbeatRequest,
+    ResumePolicy,
     RipStartResponse,
     ScanResult,
     SdfStatusReport,
@@ -423,7 +426,7 @@ async def identify(
     except RippingPausedError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="ripping is paused; no new jobs accepted",
+            detail=PAUSED_DETAIL,
         ) from exc
     except DiscAlreadyRippedError as exc:
         raise HTTPException(
@@ -469,6 +472,10 @@ def _rip_start_response(
         rip_preset_id=preset_id,
         tracks=[TrackView.model_validate(t) for t in tracks],
         min_length_seconds=min_length_seconds,
+        resume_policy=ResumePolicy(
+            mode=settings.ARM_RESUME_MODE,
+            per_title_max_remaining_pct=settings.ARM_RESUME_PER_TITLE_MAX_REMAINING_PCT,
+        ),
     )
 
 

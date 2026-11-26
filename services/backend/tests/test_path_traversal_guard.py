@@ -102,6 +102,25 @@ def test_delete_job_files_rejects_bad_id_without_touching_fs(tmp_path: Path) -> 
     assert sentinel.exists()  # guard fired before any rmtree
 
 
+def test_delete_job_files_never_unlinks_a_media_output_outside_media_root(tmp_path: Path) -> None:
+    """#268: a DONE task's absolute or `..` output path names a file outside media_root; it stays."""
+    media_root = tmp_path / "media"
+    (media_root / "Film").mkdir(parents=True)
+    inside = media_root / "Film" / "film.mkv"
+    inside.write_text("ours")
+    outside = tmp_path / "keep.mkv"
+    outside.write_text("not ours")
+    counts = job_files.delete_job_files(
+        "job_01JZXR7K3M5Q8N4VWA00000001",
+        [inside, media_root / ".." / "keep.mkv", outside],
+        raw_root=tmp_path / "raw",
+        media_root=media_root,
+    )
+    assert not inside.exists()
+    assert outside.exists()
+    assert counts["media_files_removed"] == 1
+
+
 # --- route boundary: 422 before the handler ----------------------------------
 
 

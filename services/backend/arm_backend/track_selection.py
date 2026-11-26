@@ -70,11 +70,15 @@ def _apply_custom_filters(titles: list[ScanTitle], filters: TrackFilters) -> lis
     return candidates
 
 
-def _variant_rank(title: ScanTitle, preferred: Sequence[str]) -> tuple[tuple[bool, ...], int, int]:
-    """How well one variant of the film fits: which preferred audio languages it has (in preference order), then how
-    many audio languages it has, then its size (the variant with every language group is the largest)."""
+def _variant_rank(title: ScanTitle, preferred: Sequence[str]) -> tuple[tuple[bool, ...], tuple[bool, ...], int, int]:
+    """How well one variant of the film fits: which preferred audio languages it has (in preference order), then
+    whether its MakeMKV title language is a preferred one (in the same order; it tells apart the variants that share
+    their audio but differ in opening text and credits), then how many audio languages it has, then its size (the
+    variant with every language group is the largest)."""
     languages = set(title.audio_languages)
-    return tuple(lang in languages for lang in preferred), len(languages), title.size_bytes or 0
+    audio = tuple(lang in languages for lang in preferred)
+    metadata = tuple(title.metadata_language == lang for lang in preferred)
+    return audio, metadata, len(languages), title.size_bytes or 0
 
 
 def _main_feature(titles: list[ScanTitle], preferred: Sequence[str]) -> ScanTitle:

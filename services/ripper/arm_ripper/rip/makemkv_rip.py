@@ -210,7 +210,7 @@ async def rip_disc(
     on_title_done: OnTitleDone | None = None,
     hash_outputs: bool = True,
     stop: asyncio.Event | None = None,
-    title_index: int | None = None,
+    title: int | None = None,
 ) -> RipDiscResult:
     """Rip every title with duration ≥ `minlength_seconds` from the disc
     in `device_path` to `output_dir`. Single makemkvcon invocation; the
@@ -231,9 +231,9 @@ async def rip_disc(
     `stop`, when set mid-rip, kills makemkvcon and returns STOPPED_ERROR as
     the overall error (see run_makemkvcon).
 
-    `title_index`, when given, rips only that title (its scan `info` title
+    `title`, when given, rips only that title (its scan `info` title
     id) instead of `all`; `minlength_seconds` then plays no part (see
-    `_mkv_title_command`). Pass `eligible_source_indexes=[title_index]`
+    `_mkv_title_command`). Pass `eligible_source_indexes=[title]`
     with it: MakeMKV writes one file, at output position 0.
 
     `hash_outputs=False` leaves `sha256` unset on every result: the
@@ -247,10 +247,10 @@ async def rip_disc(
     and are FAILED.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    cmd = _mkv_command(device_path, output_dir, minlength_seconds, title_index)
+    cmd = _mkv_command(device_path, output_dir, minlength_seconds, title)
     logger.info(
         "makemkvcon mkv %s device=%s outdir=%s",
-        _rip_scope(minlength_seconds, title_index),
+        _rip_scope(minlength_seconds, title),
         device_path,
         output_dir,
     )

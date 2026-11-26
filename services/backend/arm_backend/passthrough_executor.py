@@ -42,6 +42,7 @@ from arm_common import (
     with_log_context,
 )
 from arm_common.fileops import CopyCancelled, move_tree, transcode_none, tree_size
+from arm_common.path_containment import is_relative_path
 
 if TYPE_CHECKING:
     from arm_backend.ws.hub import WSHub
@@ -260,6 +261,8 @@ class _PassthroughRun:
             return None, "source track has no output_path on disk; rip not complete or raw deleted"
         if not self._task_output_path:
             return None, "task has no output_path"
+        if not is_relative_path(self._task_output_path):
+            return None, f"task output_path {self._task_output_path!r} leaves the media root"
         return await self._move(
             track, Path(self._track_output_path), Path(self._settings.MEDIA_ROOT) / self._task_output_path
         )

@@ -12,6 +12,7 @@ raise `TemplateValidationError`.
 import re
 
 from arm_common.enums import MediaType
+from arm_common.path_containment import is_relative_path
 
 _TOKEN_RE = re.compile(r"\{(\w+)(\?)?\}")
 # An optional token, optionally wrapped by one ()/[] pair that contains only it,
@@ -182,8 +183,19 @@ def validate_template(template: str, media_type: MediaType, has_transcode_preset
     # template (also caught by the schema's min_length).
     expansion = expand_template(template, _SYNTHETIC_CONTEXTS[media_type])
     # Raises if nothing is left once every optional token is empty.
-    expand_without_optional(template, media_type)
+    without_optional = expand_without_optional(template, media_type)
+    for rendered in (expansion, without_optional):
+        check_inside_media_root(rendered)
     return expansion
+
+
+def check_inside_media_root(rendered: str | None) -> None:
+    """Raise unless a rendered output path stays inside the media root: every consumer joins it onto MEDIA_ROOT, so
+    a leading `/` or a `..` segment would write, preview and delete outside it."""
+    if rendered is not None and not is_relative_path(rendered):
+        raise TemplateValidationError(
+            f"output path {rendered!r} leaves the media root: it may not start with / or contain a .. segment"
+        )
 
 
 # Human-readable description per token, surfaced by GET /api/naming/variables.

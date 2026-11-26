@@ -1,4 +1,5 @@
-"""The DVD and Blu-ray rip: one makemkvcon run for the whole disc, attributed back to the selected tracks."""
+"""The DVD and Blu-ray rip: one makemkvcon run for the whole disc (or, on a resume, one per unsettled title),
+attributed back to the selected tracks."""
 
 import asyncio
 import logging
@@ -15,6 +16,7 @@ from arm_ripper.rip.makemkv_rip import (
     rip_disc,
 )
 from arm_ripper.rip.result import RipResult
+from arm_ripper.rip.rip_timing import RipTiming
 from arm_ripper.rip.title_hasher import OnHashed, TitleHasher
 from arm_ripper.rip.track_callbacks import OnTrackDone, OnTrackProgress, OnTrackStart, TransferStats
 
@@ -142,10 +144,11 @@ class _OpticalRip:
         min_length_seconds: int,
         stop: asyncio.Event | None,
         drive_lost: Callable[[], bool] | None,
-        title_index: int | None,
-        hash_titles: bool,
+        title: int | None = None,
+        hash_titles: bool = True,
     ) -> None:
         self._device_path = device_path
+        self._title = title
         self._output_dir = output_dir
         self._track_by_index = track_by_index
         self._eligible = eligible
@@ -156,13 +159,13 @@ class _OpticalRip:
         self._min_length_seconds = min_length_seconds
         self._stop = stop
         self._drive_lost = drive_lost
-        self._title_index = title_index
         self._started: set[int] = set(skipped)
         # Source indexes whose Track has already been PATCHed DONE via the
         # streamer's mid-rip on_title_done callback. The post-rip
         # attribution loop skips these to avoid double-PATCHing.
         self._done_emitted: set[int] = set(skipped)
         self._hasher = TitleHasher(hash_files=hash_titles)
+        self._timing = RipTiming()
 
     def _drive_dropped(self) -> bool:
         """The drive left the bus under this rip. The first time
@@ -186,6 +189,7 @@ class _OpticalRip:
         await self._on_track_start(track)
 
     async def _on_title_progress(self, title_idx: int, fraction: float) -> None:
+        self._timing.progressed()
         if self._on_track_progress is None:
             return
         track = self._track_by_index.get(title_idx)
@@ -210,6 +214,7 @@ class _OpticalRip:
         `total/max` channel. Per-title attribution still happens
         post-rip in the attribution loop below.
         """
+        self._timing.progressed()
         first_track = _first_eligible_track(self._track_by_index, self._eligible)
         if self._on_track_progress is None or first_track is None:
             return
@@ -278,6 +283,7 @@ class _OpticalRip:
             duration_seconds=track.duration_seconds or track.expected_duration_seconds,
         )
         self._done_emitted.add(title_idx)
+        self._timing.title_written(title_idx, size)
         self._hasher.submit(file_path, size, self._finalise_after_hash(track, result))
 
     async def _ensure_started(self, title_idx: int, track: TrackView) -> None:
@@ -293,6 +299,7 @@ class _OpticalRip:
     async def run(self) -> None:
         """Run makemkvcon once, then report every selected track exactly once."""
         try:
+            self._timing.start()
             disc_result = await rip_disc(
                 device_path=self._device_path,
                 output_dir=self._output_dir,
@@ -304,8 +311,9 @@ class _OpticalRip:
                 on_title_done=self._on_title_done,
                 hash_outputs=False,
                 stop=self._stop,
-                title_index=self._title_index,
+                title=self._title,
             )
+            self._timing.finished()
             _delete_skipped_outputs(self._output_dir, self._eligible, self._skipped)
             if disc_result.overall_error is None and self._drive_dropped():
                 # makemkvcon exited on its own after the drive dropped: a title
@@ -319,6 +327,8 @@ class _OpticalRip:
             await self._attribute(disc_result)
 
             await self._hasher.finish(self._on_verify_progress)
+            self._timing.hashes_done()
+            self._timing.log()
         except BaseException:
             # Abandoned mid-rip (CancelledError) or a PATCH that gave up: stop
             # hashing files that are about to be wiped.
@@ -369,6 +379,7 @@ class _OpticalRip:
                     duration_seconds=track.duration_seconds or track.expected_duration_seconds,
                 )
             self._done_emitted.add(title_idx)
+            self._timing.title_written(title_idx, result.size_bytes or 0)
             self._hasher.submit(output_path, result.size_bytes or 0, self._finalise_after_hash(track, result))
 
     async def _fail_unfinished(self, error: str) -> None:
@@ -403,9 +414,13 @@ async def rip_optical(
     skip_track_ids: Collection[str] = (),
     drive_lost: Callable[[], bool] | None = None,
     hash_titles: bool = True,
+    per_title: bool = False,
 ) -> None:
     """Single-invocation DVD/BD rip with per-title attribution. `hash_titles=False` reports each title without a
     sha256 instead of re-reading it.
+
+    `per_title` (a resume that chose it, see `resume_plan`) instead runs one
+    `mkv … <title>` per unsettled eligible title, each into its own folder.
 
     The makemkvcon invocation rips every title ≥ minlength to
     `output_dir`, or, when the operator kept exactly one eligible title,
@@ -447,10 +462,27 @@ async def rip_optical(
     # One kept title (a main-feature rip) is ripped on its own: `mkv all`
     # would read every other title off the disc too, and pair its first file
     # with the kept title when the operator's review didn't list the others.
-    title_index = _single_title(track_by_index, eligible_source_indexes, skipped)
-    if title_index is not None:
+    # A resume ripping per title narrows to it the same way.
+    title = _single_title(track_by_index, eligible_source_indexes, skipped)
+    if title is not None:
         track_by_index = _kept_tracks(track_by_index)
-        eligible_source_indexes = [title_index]
+        eligible_source_indexes = [title]
+    if per_title:
+        await _rip_each_title(
+            device_path=device_path,
+            output_dir=output_dir,
+            track_by_index=track_by_index,
+            eligible=eligible_source_indexes,
+            skipped=skipped,
+            on_track_start=on_track_start,
+            on_track_done=on_track_done,
+            on_track_progress=on_track_progress,
+            min_length_seconds=min_length_seconds,
+            stop=stop,
+            drive_lost=drive_lost,
+            hash_titles=hash_titles,
+        )
+        return
     await _OpticalRip(
         device_path=device_path,
         output_dir=output_dir,
@@ -463,9 +495,60 @@ async def rip_optical(
         min_length_seconds=min_length_seconds,
         stop=stop,
         drive_lost=drive_lost,
-        title_index=title_index,
+        title=title,
         hash_titles=hash_titles,
     ).run()
+
+
+async def _rip_each_title(
+    *,
+    device_path: str,
+    output_dir: Path,
+    track_by_index: dict[int, TrackView],
+    eligible: list[int],
+    skipped: set[int],
+    on_track_start: OnTrackStart,
+    on_track_done: OnTrackDone,
+    on_track_progress: OnTrackProgress | None,
+    min_length_seconds: int,
+    stop: asyncio.Event | None,
+    drive_lost: Callable[[], bool] | None,
+    hash_titles: bool = True,
+) -> None:
+    """One `mkv … <title>` per unsettled eligible title, each into `output_dir/title-NN`, in source order.
+
+    Settled titles are never read. Once `stop` is set (the drive dropped), the titles not yet reached are reported
+    stopped so the caller leaves them for its next resume. Selected titles MakeMKV would not rip (below the minimum
+    length) fail with the same reason a full pass gives them.
+    """
+    pending = [idx for idx in eligible if idx not in skipped]
+    for n, idx in enumerate(pending):
+        if stop is not None and stop.is_set():
+            for rest in pending[n:]:
+                await on_track_done(track_by_index[rest], RipResult(ok=False, error=STOPPED_ERROR))
+            return
+        await _OpticalRip(
+            device_path=device_path,
+            output_dir=output_dir / f"title-{idx:02d}",
+            track_by_index={idx: track_by_index[idx]},
+            eligible=[idx],
+            skipped=set(),
+            on_track_start=on_track_start,
+            on_track_done=on_track_done,
+            on_track_progress=on_track_progress,
+            min_length_seconds=min_length_seconds,
+            stop=stop,
+            drive_lost=drive_lost,
+            title=idx,
+            hash_titles=hash_titles,
+        ).run()
+    for idx, track in track_by_index.items():
+        if idx in skipped or idx in eligible:
+            continue
+        await on_track_start(track)
+        await on_track_done(
+            track, RipResult(ok=False, error=_no_output_error(idx, track, min_length_seconds, eligible))
+        )
 
 
 def _delete_skipped_outputs(output_dir: Path, eligible_source_indexes: list[int], skipped: set[int]) -> None:

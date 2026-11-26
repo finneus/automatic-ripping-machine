@@ -26,6 +26,7 @@ from arm_backend.path_sanitize import sanitize_path_component
 from arm_backend.path_template import (
     NEVER_OPTIONAL,
     TemplateValidationError,
+    check_inside_media_root,
     expand_template,
     optional_tokens,
     referenced_tokens,
@@ -44,6 +45,7 @@ from arm_common import (
     TranscodePreset,
 )
 from arm_common.encoders import EncoderSpec, get_encoder, gpu_could_serve, gpu_is_eligible
+from arm_common.path_containment import is_relative_path
 from arm_common.enums import SessionApplicationStatus, TranscodeTaskStatus, TranscodeTool
 from arm_common.models import SessionApplication, TranscodeTask
 from arm_common.schemas import CollisionInfo
@@ -287,6 +289,7 @@ def compute_outputs(
             path = expand_template(template, ctx)
         if track.custom_filename:
             path = _apply_custom_filename(path, track.custom_filename)
+        check_inside_media_root(path)
         resolved.append(ResolvedTask(track_id=track.id, output_path=path))
     return resolved
 
@@ -407,7 +410,7 @@ async def find_collisions(
 
 def stat_exists(media_root: Path, relative: str) -> bool:
     """Stand-alone path-exists helper (importable from tests)."""
-    if not relative:
+    if not relative or not is_relative_path(relative):
         return False
     full = media_root / relative
     try:

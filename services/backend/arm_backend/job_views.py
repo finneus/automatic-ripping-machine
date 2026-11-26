@@ -23,6 +23,7 @@ from arm_common import (
 )
 from arm_common.enums import TERMINAL_JOB_STATUSES, transcode_task_blocks_job_delete
 from arm_common.models import TranscodeTask
+from arm_common.path_containment import is_relative_path
 from arm_common.schemas import (
     DiscFingerprintView,
     JobDetailView,
@@ -348,7 +349,7 @@ async def _previous_rip_view(db: AsyncSession, job: Job) -> PreviousRipView | No
             .scalars()
             .all()
         )
-        outputs = [media_root / t.output_path for t in done if t.output_path]
+        outputs = [media_root / t.output_path for t in done if t.output_path and is_relative_path(t.output_path)]
     return PreviousRipView(
         job_id=previous.id,
         title=previous.title,

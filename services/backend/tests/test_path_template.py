@@ -9,6 +9,7 @@ from arm_backend.path_template import (
     optional_tokens,
     referenced_tokens,
     required_tokens,
+    check_inside_media_root,
     validate_template,
 )
 from arm_common import MediaType
@@ -214,3 +215,23 @@ def test_expand_template_malformed_braces_raise() -> None:
     # wrapped as a validation error so callers get one exception type.
     with pytest.raises(TemplateValidationError, match="malformed template"):
         expand_template("{title", {"title": "x"})
+
+
+@pytest.mark.parametrize(
+    "template",
+    ["/{title}.{ext}", "../{title}.{ext}", "/etc/{title}.{ext}", "{title}/../../{title}.{ext}"],
+)
+def test_validate_rejects_a_template_that_leaves_the_media_root(template: str) -> None:
+    with pytest.raises(TemplateValidationError, match="leaves the media root"):
+        validate_template(template, MediaType.MOVIE, has_transcode_preset=True)
+
+
+def test_validate_rejects_a_leading_slash_only_seen_with_the_optional_token_present() -> None:
+    """`/{title} ({year?})/...` renders absolute with a year and relative without: both renders are checked."""
+    with pytest.raises(TemplateValidationError, match="leaves the media root"):
+        validate_template("/{title} ({year?})/{title}.{ext}", MediaType.MOVIE, has_transcode_preset=True)
+
+
+def test_check_inside_media_root_passes_a_relative_path_and_no_path() -> None:
+    check_inside_media_root("Movies/Iron Man (2008)/Iron Man.mkv")
+    check_inside_media_root(None)

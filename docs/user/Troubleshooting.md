@@ -189,6 +189,26 @@ not a broken stack.
 `App key incorrect`, `MSG:5021 application version too old`, or Blu-rays failing
 while DVDs work — all covered on the [MakeMKV](MakeMKV) page.
 
+## A rip takes longer than expected
+
+Every DVD or Blu-ray rip ends its job log with one `rip timing:` line (event `rip.timing`). It splits the rip into
+the parts that can be slow:
+
+```
+rip timing: disc open after 20 s; wrote 56.1 GB in 39.8 min (23.5 MB/s); title 4 56.1 GB in 39.5 min (23.6 MB/s); hash tail 6.1 min
+```
+
+- **disc open after:** the time from starting MakeMKV to its first progress. It covers reading the disc's structure
+  and, on a UHD, fetching its key. Minutes here point at the drive or at MakeMKV's key setup.
+- **wrote … (MB/s):** the drive's read rate. A UHD drive usually reaches 20–25 MB/s; much less points at the drive,
+  its connection or a damaged disc.
+- **title …:** each title written, with its own time when MakeMKV finished it during the rip. More titles than you
+  kept means more read time; see the rip preset's track selection.
+- **hash tail:** the time the job waited for the last file's SHA-256 after the rip. Turn hashing off in Settings when
+  you don't need it.
+
+Quote this line when you report a slow rip.
+
 ## The image pull returns 404
 
 During the alpha, registry images may not exist for every tag yet. Build the

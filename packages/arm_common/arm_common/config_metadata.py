@@ -285,8 +285,9 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         tier="operator",
         label="Preferred audio languages",
         help="When a disc holds the film several times at the same length (one per language group), the main "
-        "feature is the one with these audio languages, in this order. With none ticked, the variant with the most "
-        "audio languages wins.",
+        "feature is the one with these audio languages, in this order; between variants with the same audio, the one "
+        "MakeMKV marks with the first of these languages (its opening text and credits). With none ticked, the "
+        "variant with the most audio languages wins.",
         type="ranked",
         editable=True,
         enum_values=list(AUDIO_LANGUAGE_LABELS),

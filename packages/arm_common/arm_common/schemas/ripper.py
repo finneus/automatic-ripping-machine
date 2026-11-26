@@ -81,6 +81,9 @@ class ScanTitle(BaseModel):
     # MakeMKV's comment on the title (TINFO 49). On a disc with decoy playlists MakeMKV, when it can run the disc's
     # Java, comments the real film `FPL_MainFeature`.
     comment: str | None = None
+    # MakeMKV's metadata language of the title (TINFO 28), terminological ISO 639-2. A disc that carries the film once
+    # per language, with the same audio but its own opening text and credits, tells the playlists apart by it.
+    metadata_language: str | None = None
 
 
 class DiscFingerprintInput(BaseModel):
