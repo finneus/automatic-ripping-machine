@@ -75,12 +75,18 @@ def runtime_choice(runtimes_minutes: Sequence[int | None], disc_seconds: int, *,
     An unknown runtime never wins. An unknown first-hit runtime keeps the first hit (no evidence, no change) unless
     nobody rated it (`first_rated=False`): then any hit that fits the disc closely enough wins."""
     offs = [_seconds_off(m, disc_seconds) for m in runtimes_minutes]
-    if not offs or (offs[0] is None and first_rated):
+    if not offs:
         return 0
-    if offs[0] is None:
+    first_off = offs[0]
+    if first_off is None:
+        if first_rated:
+            return 0
         # An unrated first hit with no runtime counts as a miss: any hit within MAX_OFF_SECONDS fits clearly better.
-        offs[0] = MAX_OFF_SECONDS + CLEARLY_CLOSER_SECONDS
-    best_off, best = min((off, i) for i, off in enumerate(offs) if off is not None)
-    if best_off > MAX_OFF_SECONDS or best_off + CLEARLY_CLOSER_SECONDS > offs[0]:
+        first_off = MAX_OFF_SECONDS + CLEARLY_CLOSER_SECONDS
+    candidates = [(off, i) for i, off in enumerate(offs) if off is not None]
+    if not candidates:
+        return 0
+    best_off, best = min(candidates)
+    if best_off > MAX_OFF_SECONDS or best_off + CLEARLY_CLOSER_SECONDS > first_off:
         return 0
     return best
