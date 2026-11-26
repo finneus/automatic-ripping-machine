@@ -17,6 +17,7 @@ from arm_backend.crash_recovery import reset_job_for_recovery
 from arm_backend.db import get_session
 from arm_backend.metadata import MetadataDispatcher
 from arm_backend.identify_flow import DiscAlreadyRippedError, IdentifyFlow, RippingPausedError, UnknownDriveError
+from arm_backend.pause_policy import PAUSED_DETAIL
 from arm_backend.rip_preset_resolution import (
     RipPresetUnavailable,
     load_routed_session,
@@ -398,7 +399,7 @@ async def identify(
     except RippingPausedError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="ripping is paused; no new jobs accepted",
+            detail=PAUSED_DETAIL,
         ) from exc
     except DiscAlreadyRippedError as exc:
         raise HTTPException(

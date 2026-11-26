@@ -263,6 +263,13 @@ describe('fetchDashboardSnapshot endpoint failures', () => {
 		expect((await fetchDashboardSnapshot()).notification_count).toBe(0);
 	});
 
+	it('reports the review hold from the config hold_for_review flag', async () => {
+		vi.mocked(apiFetch).mockResolvedValueOnce({ ripping_paused: true, hold_for_review: true });
+		expect((await fetchDashboardSnapshot()).review_hold).toBe(true);
+		vi.mocked(apiFetch).mockResolvedValueOnce({ ripping_paused: true, hold_for_review: false });
+		expect((await fetchDashboardSnapshot()).review_hold).toBe(false);
+	});
+
 	it('reports ripping_enabled from the config ripping_paused flag', async () => {
 		vi.mocked(apiFetch).mockResolvedValueOnce({ ripping_paused: true });
 

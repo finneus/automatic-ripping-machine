@@ -57,6 +57,9 @@ export interface DashboardData {
 	preparing: IsoPreparing[];
 	notification_count: number;
 	ripping_enabled: boolean;
+	// The review hold (config hold_for_review). While paused with it on, new discs are
+	// held for review rather than refused, so the header names the pause that way.
+	review_hold?: boolean;
 	makemkv_key_valid: boolean | null;
 	makemkv_key_checked_at: string | null;
 	transcoder_online: boolean;
@@ -205,6 +208,7 @@ export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
 		preparing,
 		notification_count: notifications === null ? null : (notifications.unseen ?? 0),
 		ripping_enabled: config === null ? null : !config.ripping_paused,
+		review_hold: config?.hold_for_review === true,
 		review_wait_seconds: config === null ? null : (config.manual_wait_seconds ?? 60),
 		makemkv_key_valid: config?.makemkv_key_valid ?? null,
 		makemkv_key_checked_at: config?.makemkv_key_checked_at ?? null,

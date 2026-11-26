@@ -608,6 +608,37 @@ def test_manual_trigger_unknown_session_400(signing_key: bytes) -> None:
     assert "unknown session_id" in r.json()["detail"]
 
 
+def test_manual_trigger_refused_while_paused_without_the_review_hold(signing_key: bytes) -> None:
+    from arm_common import Config
+
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["config"] = [Config(id=1, ripping_paused=True, hold_for_review=False)]
+    db.rows["drives"] = [_drive(media=DriveMediaStatus.LOADED)]
+    db.rows["jobs"] = []
+    with TestClient(app) as client:
+        r = client.post("/api/jobs/manual", json={"drive_id": "drv_x"}, headers=_auth(token))
+    assert r.status_code == 409
+    assert r.json()["detail"] == "ripping is paused; no new jobs accepted"
+
+
+def test_manual_trigger_starts_while_paused_with_the_review_hold(signing_key: bytes) -> None:
+    """#702: the header's Pause sets the review hold too. A disc inserted then is parked for review, and Start rip
+    on the drive card must take the same path instead of a 409."""
+    from arm_common import Config
+
+    db = FakeSession()
+    hub = _Hub()
+    app, token = _make_app(signing_key, db, hub)
+    db.rows["config"] = [Config(id=1, ripping_paused=True, hold_for_review=True)]
+    db.rows["drives"] = [_drive(media=DriveMediaStatus.LOADED)]
+    db.rows["jobs"] = []
+    with TestClient(app) as client:
+        r = client.post("/api/jobs/manual", json={"drive_id": "drv_x"}, headers=_auth(token))
+    assert r.status_code == 202
+    assert any(e["event_type"] == "manual.trigger" for e in hub.events)
+
+
 def test_manual_trigger_success_202(signing_key: bytes) -> None:
     db = FakeSession()
     hub = _Hub()

@@ -75,7 +75,7 @@
 			<span class="toggle" aria-hidden="true">
 				<span class="toggle-thumb"></span>
 			</span>
-			{$dashboard.ripping_enabled ? 'Auto-Start' : 'Paused'}
+			{$dashboard.ripping_enabled ? 'Auto-Start' : $dashboard.review_hold ? 'Hold for review' : 'Paused'}
 		</button>
 	{/if}
 	<!-- Quick actions menu -->

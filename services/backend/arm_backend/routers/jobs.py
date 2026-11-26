@@ -26,6 +26,7 @@ from arm_backend.job_views import job_detail_view, job_list_views
 from arm_backend.log_reader import per_job_log_path
 from arm_backend.metadata.identity_payload import external_ids_of
 from arm_backend.path_template import TemplateValidationError
+from arm_backend.pause_policy import PAUSED_DETAIL, refuses_new_jobs
 from arm_backend.routers._deps import get_hub, get_stage_runner
 from arm_backend.routers._params import JobIdParam
 from arm_backend.constants import CONFIG_SINGLETON_ID
@@ -598,11 +599,8 @@ async def manual_trigger(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown drive_id: {req.drive_id}")
 
     cfg = (await db.execute(select(Config).where(col(Config.id) == CONFIG_SINGLETON_ID))).scalar_one_or_none()
-    if cfg is not None and cfg.ripping_paused:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="ripping is paused; no new jobs accepted",
-        )
+    if refuses_new_jobs(cfg):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PAUSED_DETAIL)
 
     # The ripper drops a trigger while it owns any job, and no ripper acts on
     # one for a detached drive or after it stopped beating. Refuse those here,

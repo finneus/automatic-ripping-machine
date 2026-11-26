@@ -25,6 +25,11 @@ reading, ripping, tray open), toggles the drive between **Auto** and **Manual**
 rip mode, and has a **Start rip** button for a disc already in the tray (how you
 rip when auto-rip is off, optionally pinning a session for that disc).
 
+The switch in the header starts and pauses ripping. **Auto-Start** rips each disc as it arrives. Switching it off
+pauses ripping and turns on the review hold, so it reads **Hold for review**: new discs, and **Start rip** on a drive
+card, still scan and identify, then wait on their review card until you start them. It reads **Paused** only when
+the review hold is off in Settings; then new discs and **Start rip** are refused until you switch it back on.
+
 ## Jobs
 
 **`/jobs/:id`** is one job in detail: the disc that was identified, its tracks,

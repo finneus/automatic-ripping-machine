@@ -14,6 +14,7 @@ from arm_backend.disc_dedupe import find_previous_rips, find_reusable_job_for_di
 from arm_backend.metadata import MetadataDispatcher
 from arm_backend.metadata.base import MetadataResult
 from arm_backend.metadata.dispatcher import DISPATCH_TIMEOUT_SECONDS
+from arm_backend.pause_policy import refuses_new_jobs
 from arm_backend.rip_preset_resolution import (
     RipPresetUnavailable,
     resolve_rip_preset_for_job,
@@ -198,7 +199,7 @@ class IdentifyFlow:
         # + PARKS the disc for review (pause only suppresses auto-start at expiry, see
         # below); it does not reject the job. With the gate off, pause keeps its
         # plain meaning: reject new jobs outright.
-        if cfg.ripping_paused and not cfg.hold_for_review:
+        if refuses_new_jobs(cfg):
             raise RippingPausedError()
 
     async def _apply_previously_ripped_policy(self, drive: Drive, cfg: Config, scan: ScanResult) -> Job | None:
