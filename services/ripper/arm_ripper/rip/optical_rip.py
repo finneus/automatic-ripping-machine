@@ -16,6 +16,7 @@ from arm_ripper.rip.makemkv_rip import (
     rip_disc,
 )
 from arm_ripper.rip.result import RipResult
+from arm_ripper.rip.rip_timing import RipTiming
 from arm_ripper.rip.title_hasher import OnHashed, TitleHasher
 from arm_ripper.rip.track_callbacks import OnTrackDone, OnTrackProgress, OnTrackStart, TransferStats
 
@@ -164,6 +165,7 @@ class _OpticalRip:
         # attribution loop skips these to avoid double-PATCHing.
         self._done_emitted: set[int] = set(skipped)
         self._hasher = TitleHasher(hash_files=hash_titles)
+        self._timing = RipTiming()
 
     def _drive_dropped(self) -> bool:
         """The drive left the bus under this rip. The first time
@@ -187,6 +189,7 @@ class _OpticalRip:
         await self._on_track_start(track)
 
     async def _on_title_progress(self, title_idx: int, fraction: float) -> None:
+        self._timing.progressed()
         if self._on_track_progress is None:
             return
         track = self._track_by_index.get(title_idx)
@@ -211,6 +214,7 @@ class _OpticalRip:
         `total/max` channel. Per-title attribution still happens
         post-rip in the attribution loop below.
         """
+        self._timing.progressed()
         first_track = _first_eligible_track(self._track_by_index, self._eligible)
         if self._on_track_progress is None or first_track is None:
             return
@@ -279,6 +283,7 @@ class _OpticalRip:
             duration_seconds=track.duration_seconds or track.expected_duration_seconds,
         )
         self._done_emitted.add(title_idx)
+        self._timing.title_written(title_idx, size)
         self._hasher.submit(file_path, size, self._finalise_after_hash(track, result))
 
     async def _ensure_started(self, title_idx: int, track: TrackView) -> None:
@@ -294,6 +299,7 @@ class _OpticalRip:
     async def run(self) -> None:
         """Run makemkvcon once, then report every selected track exactly once."""
         try:
+            self._timing.start()
             disc_result = await rip_disc(
                 device_path=self._device_path,
                 output_dir=self._output_dir,
@@ -307,6 +313,7 @@ class _OpticalRip:
                 stop=self._stop,
                 title=self._title,
             )
+            self._timing.finished()
             _delete_skipped_outputs(self._output_dir, self._eligible, self._skipped)
             if disc_result.overall_error is None and self._drive_dropped():
                 # makemkvcon exited on its own after the drive dropped: a title
@@ -320,6 +327,8 @@ class _OpticalRip:
             await self._attribute(disc_result)
 
             await self._hasher.finish(self._on_verify_progress)
+            self._timing.hashes_done()
+            self._timing.log()
         except BaseException:
             # Abandoned mid-rip (CancelledError) or a PATCH that gave up: stop
             # hashing files that are about to be wiped.
@@ -370,6 +379,7 @@ class _OpticalRip:
                     duration_seconds=track.duration_seconds or track.expected_duration_seconds,
                 )
             self._done_emitted.add(title_idx)
+            self._timing.title_written(title_idx, result.size_bytes or 0)
             self._hasher.submit(output_path, result.size_bytes or 0, self._finalise_after_hash(track, result))
 
     async def _fail_unfinished(self, error: str) -> None:

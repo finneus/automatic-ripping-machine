@@ -815,6 +815,41 @@ async def test_rip_all_live_per_title_done_patches_via_streamer_callback(monkeyp
     assert by_track["trk_1"] == [("start", None), ("done", 200)]
 
 
+async def test_rip_all_logs_where_the_rip_time_went(monkeypatch, tmp_path, caplog):
+    """A finished pass logs one `rip.timing` event with each title it wrote; these settle after makemkvcon exits."""
+    first, second = tmp_path / "Disc_t00.mkv", tmp_path / "Disc_t01.mkv"
+    first.write_bytes(b"x" * 100)
+    second.write_bytes(b"y" * 200)
+    fake_result = RipDiscResult(
+        overall_error=None,
+        titles={
+            0: RipResult(ok=True, output_path=first, size_bytes=100),
+            1: RipResult(ok=True, output_path=second, size_bytes=200),
+        },
+    )
+    _stub_rip_disc(monkeypatch, fake_result, fire_per_title_start=False)
+
+    async def ignore(*_args: object) -> None:
+        return None
+
+    with caplog.at_level(logging.INFO, logger="arm_ripper.rip.rip_timing"):
+        await rip_all(
+            disc_type=DiscType.BLURAY,
+            device_path="/dev/sr0",
+            tracks=[_track(0), _track(1)],
+            output_dir=tmp_path,
+            on_track_start=ignore,
+            on_track_done=ignore,
+            on_track_progress=ignore,
+            min_length_seconds=600,
+        )
+
+    [record] = [r for r in caplog.records if getattr(r, "event", None) == "rip.timing"]
+    assert [(t["title"], t["bytes"], t["seconds"]) for t in record.titles] == [(0, 100, None), (1, 200, None)]
+    assert record.written_bytes == 300
+    assert record.hash_tail_seconds is not None
+
+
 async def test_rip_all_disc_error_keeps_already_done_tracks_done(monkeypatch, tmp_path):
     """If the rip fails partway, tracks that already finalised via the
     live path keep their DONE status — partial success is still
