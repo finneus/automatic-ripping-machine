@@ -4584,6 +4584,10 @@ export type ScanTitle = {
      * Comment
      */
     comment?: string | null;
+    /**
+     * Metadata Language
+     */
+    metadata_language?: string | null;
 };
 
 /**

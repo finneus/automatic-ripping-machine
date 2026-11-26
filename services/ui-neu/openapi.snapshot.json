@@ -16389,6 +16389,17 @@
               }
             ],
             "title": "Comment"
+          },
+          "metadata_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Language"
           }
         },
         "type": "object",

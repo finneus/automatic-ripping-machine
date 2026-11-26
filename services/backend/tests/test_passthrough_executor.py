@@ -976,6 +976,8 @@ def test_a_folder_move_is_retried_too(tmp_path: Path, monkeypatch: Any) -> None:
         mover, tmp_path / "BDMV", tmp_path / "out", settings, True, threading.Event(), mod._CopyProgress()
     )
     assert size == 115 and len(calls) == 2
+
+
 @pytest.mark.parametrize("output_path", ["/etc/film.mkv", "../film.mkv"])
 async def test_task_output_path_leaving_the_media_root_fails_without_moving(tmp_path: Path, output_path: str) -> None:
     media_root = tmp_path / "media"
