@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Sequence, Set
 
 from arm_backend.bare_clip_titles import bare_clip_duplicates
 from arm_common import TrackStatus, DiscType, OutputMode, RipPreset, Track, TrackKind, TrackSelection
@@ -81,28 +81,62 @@ def _variant_rank(title: ScanTitle, preferred: Sequence[str]) -> tuple[tuple[boo
     return audio, metadata, len(languages), title.size_bytes or 0
 
 
-def _main_feature(titles: list[ScanTitle], preferred: Sequence[str]) -> ScanTitle:
+def _main_feature(titles: list[ScanTitle], preferred: Sequence[str], reference: Set[str] = frozenset()) -> ScanTitle:
     """The main feature: among the titles within `MAIN_FEATURE_TIE_SECONDS` of the longest one (that runs at least
     `MAIN_FEATURE_MIN_SECONDS` when any does), the best `_variant_rank`; on a full tie the lowest index. A bare clip
     of a listed playlist is never picked while the playlist is there: same film, but without its chapters. When
     MakeMKV comments a title `MAKEMKV_MAIN_FEATURE_COMMENT`, only such titles are candidates: a decoy playlist can be
-    the longest title on the disc."""
+    the longest title on the disc. When a variant plays the clips TheDiscDB marks the film's main movie (`reference`,
+    segment maps), only such variants are candidates: the others carry a translated opening and credits."""
+    return max(_main_feature_candidates(titles, reference), key=lambda t: _variant_rank(t, preferred))
+
+
+def _main_feature_candidates(titles: list[ScanTitle], reference: Set[str]) -> list[ScanTitle]:
+    """The same-length variants of the film `_main_feature` ranks (see there for which titles they are)."""
     duplicates = bare_clip_duplicates(titles)
     pool = [t for t in titles if t.index not in duplicates] or titles
     pool = [t for t in pool if t.comment == MAKEMKV_MAIN_FEATURE_COMMENT] or pool
     eligible = [t for t in pool if t.duration_seconds >= MAIN_FEATURE_MIN_SECONDS] or pool
     longest = max(t.duration_seconds for t in eligible)
     variants = [t for t in eligible if longest - t.duration_seconds <= MAIN_FEATURE_TIE_SECONDS]
-    return max(variants, key=lambda t: _variant_rank(t, preferred))
+    return [t for t in variants if t.segment_map in reference] or variants
 
 
-def _select_video(scan: ScanResult, rip_preset: RipPreset, job_id: str, preferred: Sequence[str]) -> list[Track]:
+def _evidence(title: ScanTitle, preferred: Sequence[str]) -> tuple[tuple[bool, ...], tuple[bool, ...], int]:
+    """`_variant_rank` without the size: a few bytes more (a longer translated opening) say nothing about which
+    variant is the original."""
+    audio, metadata, count, _size = _variant_rank(title, preferred)
+    return audio, metadata, count
+
+
+def main_feature_guess(
+    scan: ScanResult, rip_preset: RipPreset, preferred: Sequence[str] = (), reference: Set[str] = frozenset()
+) -> list[ScanTitle]:
+    """The variants a main-feature pick could only guess between: two or more same-length titles that tie on
+    everything that tells variants apart (TheDiscDB's main movie, MakeMKV's comment, audio and title languages), so
+    size or index decided. Empty when the pick had evidence, or the preset does not pick a main feature."""
+    if rip_preset.track_selection != TrackSelection.MAIN_FEATURE or scan.disc_type not in (
+        DiscType.DVD,
+        DiscType.BLURAY,
+    ):
+        return []
+    if not scan.titles:
+        return []
+    candidates = _main_feature_candidates(scan.titles, reference)
+    best = max(_evidence(t, preferred) for t in candidates)
+    tied = [t for t in candidates if _evidence(t, preferred) == best]
+    return tied if len(tied) > 1 else []
+
+
+def _select_video(
+    scan: ScanResult, rip_preset: RipPreset, job_id: str, preferred: Sequence[str], reference: Set[str]
+) -> list[Track]:
     titles = scan.titles
     if not titles:
         return []
     rule = rip_preset.track_selection
     if rule == TrackSelection.MAIN_FEATURE:
-        return [_video_track(job_id, _main_feature(titles, preferred))]
+        return [_video_track(job_id, _main_feature(titles, preferred, reference))]
     if rule == TrackSelection.ALL_TRACKS:
         return [_video_track(job_id, t) for t in titles if t.duration_seconds >= ALL_TRACKS_MIN_SECONDS]
     if rule == TrackSelection.ARCHIVE:
@@ -159,22 +193,31 @@ def _whole_disc_tracks(job_id: str, scan: ScanResult, rip_preset: RipPreset) -> 
 
 
 def select_tracks(
-    job_id: str, scan: ScanResult, rip_preset: RipPreset, preferred_audio_languages: Sequence[str] = ()
+    job_id: str,
+    scan: ScanResult,
+    rip_preset: RipPreset,
+    preferred_audio_languages: Sequence[str] = (),
+    reference_segment_maps: Set[str] = frozenset(),
 ) -> list[Track]:
-    """Apply rip-preset track-selection rules to a scan. `preferred_audio_languages` (terminological codes, in
-    order) picks the main feature among same-length variants of the film."""
+    """Apply rip-preset track-selection rules to a scan. `reference_segment_maps` (TheDiscDB's main movie of the
+    film) and then `preferred_audio_languages` (terminological codes, in order) pick the main feature among
+    same-length variants of the film."""
     whole = _whole_disc_tracks(job_id, scan, rip_preset)
     if whole is not None:
         return whole
     if scan.disc_type in (DiscType.DVD, DiscType.BLURAY):
-        return _select_video(scan, rip_preset, job_id, preferred_audio_languages)
+        return _select_video(scan, rip_preset, job_id, preferred_audio_languages, reference_segment_maps)
     if scan.disc_type == DiscType.CD:
         return _select_audio(scan, rip_preset, job_id)
     raise TrackSelectionError(f"cannot select tracks for disc_type={scan.disc_type}")
 
 
 def select_tracks_for_review(
-    job_id: str, scan: ScanResult, rip_preset: RipPreset, preferred_audio_languages: Sequence[str] = ()
+    job_id: str,
+    scan: ScanResult,
+    rip_preset: RipPreset,
+    preferred_audio_languages: Sequence[str] = (),
+    reference_segment_maps: Set[str] = frozenset(),
 ) -> list[Track]:
     """Persist EVERY scanned title as a Track for the timed review gate, marking
     preset-rejected titles `excluded=True` (the default keep/drop set) so the
@@ -191,7 +234,8 @@ def select_tracks_for_review(
     if whole is not None:
         return whole
 
-    kept_refs = {t.source_ref for t in select_tracks(job_id, scan, rip_preset, preferred_audio_languages)}
+    kept = select_tracks(job_id, scan, rip_preset, preferred_audio_languages, reference_segment_maps)
+    kept_refs = {t.source_ref for t in kept}
     # A bare clip of a listed playlist starts excluded: every title is persisted here, so dropping it from the
     # default set cannot shift which file belongs to which title.
     duplicates = bare_clip_duplicates(scan.titles)

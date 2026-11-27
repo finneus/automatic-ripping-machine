@@ -32,6 +32,7 @@ from arm_backend.identity.proposals import record_preset
 from arm_backend.identity.stage_runner import EpisodeStageRunner
 from arm_backend.routers._deps import get_hub, get_stage_runner
 from arm_backend.audio_preference import preferred_audio_languages
+from arm_backend.main_feature_reference import reference_segment_maps
 from arm_backend.track_selection import DiscBackupNeedsBluray, select_tracks
 from arm_backend.ws import WSHub
 from arm_common import (
@@ -524,14 +525,22 @@ async def _load_rip_preset(session: AsyncSession, preset_id: str) -> RipPreset:
     return preset
 
 
+async def _thediscdb_reference(session: AsyncSession, request: Request, job: Job) -> frozenset[str]:
+    """TheDiscDB's main-movie segment maps for the job's film, while TheDiscDB is enabled (see
+    `main_feature_reference`)."""
+    cfg = (await session.execute(select(Config).where(col(Config.id) == CONFIG_SINGLETON_ID))).scalar_one_or_none()
+    store = getattr(request.app.state, "thediscdb", None) if cfg is not None and cfg.thediscdb_enabled else None
+    return reference_segment_maps(store, job)
+
+
 async def _select_or_fail(
-    session: AsyncSession, hub: WSHub, job: Job, scan: ScanResult, preset: RipPreset
+    session: AsyncSession, hub: WSHub, job: Job, scan: ScanResult, preset: RipPreset, reference: frozenset[str]
 ) -> list[Track]:
     # A whole-disc preset (ISO dump, FOLDER backup) gives its one track
     # whatever the scan found, so it never lands in the no-titles handling
     # below; a FOLDER preset on anything but a Blu-ray is refused here.
     try:
-        new_tracks = select_tracks(job.id, scan, preset, await preferred_audio_languages(session))
+        new_tracks = select_tracks(job.id, scan, preset, await preferred_audio_languages(session), reference)
     except DiscBackupNeedsBluray as exc:
         # Fail the job with the reason on its event: the ripper gives up on a
         # 4xx, and the job would otherwise sit IDENTIFIED with nothing to say why.
@@ -584,6 +593,7 @@ async def _emit_rip_started(session: AsyncSession, hub: WSHub, job: Job, preset_
 
 @router.post("/jobs/{job_id}/rip-start", response_model=RipStartResponse)
 async def rip_start(
+    request: Request,
     job: Job = Depends(require_drive_owner_by_job),
     session: AsyncSession = Depends(get_session),
     hub: WSHub = Depends(get_hub),
@@ -599,7 +609,8 @@ async def rip_start(
     _require_startable(job)
     scan = _scan_of(job)
     preset = await _load_rip_preset(session, preset_id)
-    new_tracks = await _select_or_fail(session, hub, job, scan, preset)
+    reference = await _thediscdb_reference(session, request, job)
+    new_tracks = await _select_or_fail(session, hub, job, scan, preset, reference)
     await _begin_rip(session, job, new_tracks)
 
     refreshed = await _job_tracks(session, job.id)
