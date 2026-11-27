@@ -1,11 +1,11 @@
 """Parse `makemkvcon -r info` robot output into the volume label, titles and disc type."""
 
 import re
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Literal
 
 from arm_common import DiscType
 from arm_common.languages import terminological
-from arm_common.schemas import ScanTitle
+from arm_common.schemas import ScanStream, ScanTitle
 
 _DURATION_RE = re.compile(r"^(\d+):(\d{1,2}):(\d{1,2})$")
 _QUOTED_RE = re.compile(r'^"(.*)"$')
@@ -32,11 +32,24 @@ def _to_int(value: str) -> int | None:
         return None
 
 
-# SINFO attribute codes this parser reads: the stream type (its code field says which: 6202 is audio) and the
-# stream's ISO 639-2 language code.
+# SINFO attribute codes this parser reads: the stream type (its code field says which: 6202 is audio), the stream's
+# ISO 639-2 language code, short codec name, video frame size, stream flags and audio channel layout.
 _SINFO_TYPE = 1
 _SINFO_LANGUAGE = 3
+_SINFO_CODEC = 6
+_SINFO_RESOLUTION = 19
+_SINFO_FLAGS = 22
+_SINFO_CHANNELS = 40
 _AUDIO_STREAM = 6202
+# Stream type code -> ScanStream kind; other types (none seen on discs) are skipped.
+_STREAM_KINDS: dict[int, Literal["video", "audio", "subtitle"]] = {6201: "video", 6202: "audio", 6203: "subtitle"}
+# Stream flag bits (MakeMKV's AP_AVStreamFlag_*): a commentary, an alternate commentary, a stream MakeMKV derives
+# itself (the AC3 core of a TrueHD track) and a forced subtitle.
+_FLAG_COMMENTARY = 1 | 2
+_FLAG_DERIVED = 2048
+_FLAG_FORCED = 4096
+# Text-valued SINFO attributes kept as they are.
+_SINFO_TEXT = (_SINFO_LANGUAGE, _SINFO_CODEC, _SINFO_RESOLUTION, _SINFO_FLAGS, _SINFO_CHANNELS)
 
 # A title's streams: stream index -> {SINFO attribute code: value}.
 _Streams = dict[int, dict[int, int | str]]
@@ -53,6 +66,46 @@ def _audio_languages(streams: _Streams) -> list[str]:
             if code not in out:
                 out.append(code)
     return out
+
+
+def _stream_flags(value: int | str | None) -> int:
+    """A stream's flag bits; 0 when MakeMKV reported none or something that is not a number."""
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value or 0)
+    except ValueError:
+        return 0
+
+
+def _stream_text(stream: dict[int, int | str], attr: int) -> str | None:
+    """A text attribute of a stream, or None when it is missing or empty."""
+    value = stream.get(attr)
+    return value if isinstance(value, str) and value else None
+
+
+def _scan_stream(stream: dict[int, int | str]) -> ScanStream | None:
+    """One stream as a ScanStream; None for a stream of unknown type or one MakeMKV derives itself."""
+    type_code = stream.get(_SINFO_TYPE)
+    kind = _STREAM_KINDS.get(type_code) if isinstance(type_code, int) else None
+    flags = _stream_flags(stream.get(_SINFO_FLAGS))
+    if kind is None or flags & _FLAG_DERIVED:
+        return None
+    language = _stream_text(stream, _SINFO_LANGUAGE)
+    return ScanStream(
+        kind=kind,
+        language=terminological(language) if language else None,
+        codec=_stream_text(stream, _SINFO_CODEC),
+        channels=_stream_text(stream, _SINFO_CHANNELS),
+        resolution=_stream_text(stream, _SINFO_RESOLUTION),
+        forced=bool(flags & _FLAG_FORCED),
+        commentary=bool(flags & _FLAG_COMMENTARY),
+    )
+
+
+def _scan_streams(streams: _Streams) -> list[ScanStream]:
+    """The title's streams in stream order (see `_scan_stream`)."""
+    return [stream for idx in sorted(streams) if (stream := _scan_stream(streams[idx])) is not None]
 
 
 def _to_language(value: str) -> str | None:
@@ -122,6 +175,7 @@ def _scan_title(idx: int, entry: dict[str, object], streams: _Streams) -> ScanTi
         comment=_text(entry, "comment"),
         metadata_language=_text(entry, "metadata_language"),
         audio_languages=_audio_languages(streams),
+        streams=_scan_streams(streams),
     )
 
 
@@ -179,14 +233,15 @@ class _InfoParser:
                 entry[name] = field_value
 
     def on_sinfo(self, fields: list[str]) -> None:
-        """Keep a stream's type (the attribute's code field) and language (its value); other attributes are skipped."""
+        """Keep a stream's type (the attribute's code field) and its `_SINFO_TEXT` attributes (their values); other
+        attributes are skipped."""
         try:
             title_idx, stream_idx, attr, code = (int(f) for f in fields[:4])
         except ValueError:
             return
         if attr == _SINFO_TYPE:
             value: int | str = code
-        elif attr == _SINFO_LANGUAGE:
+        elif attr in _SINFO_TEXT:
             value = _strip_quotes(",".join(fields[4:]))
         else:
             return

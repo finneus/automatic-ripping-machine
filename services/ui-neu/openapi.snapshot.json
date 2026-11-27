@@ -16307,6 +16307,79 @@
         ],
         "title": "ScanResult"
       },
+      "ScanStream": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "video",
+              "audio",
+              "subtitle"
+            ],
+            "title": "Kind"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "codec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codec"
+          },
+          "channels": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channels"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "forced": {
+            "type": "boolean",
+            "title": "Forced",
+            "default": false
+          },
+          "commentary": {
+            "type": "boolean",
+            "title": "Commentary",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ScanStream",
+        "description": "One video, audio or subtitle stream of a scanned title, as MakeMKV lists it (SINFO). The review shows them\nbeside each title, so the operator can tell same-length variants of the film apart."
+      },
       "ScanTitle": {
         "properties": {
           "index": {
@@ -16400,6 +16473,13 @@
               }
             ],
             "title": "Metadata Language"
+          },
+          "streams": {
+            "items": {
+              "$ref": "#/components/schemas/ScanStream"
+            },
+            "type": "array",
+            "title": "Streams"
           }
         },
         "type": "object",

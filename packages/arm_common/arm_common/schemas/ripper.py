@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -64,6 +64,25 @@ class RipperHeartbeatRequest(BaseModel):
     media_status: DriveMediaStatus
 
 
+class ScanStream(BaseModel):
+    """One video, audio or subtitle stream of a scanned title, as MakeMKV lists it (SINFO). The review shows them
+    beside each title, so the operator can tell same-length variants of the film apart."""
+
+    kind: Literal["video", "audio", "subtitle"]
+    # Terminological ISO 639-2 (`deu`, not `ger`); None when MakeMKV reports none (a video stream).
+    language: str | None = None
+    # MakeMKV's short codec name (SINFO 6): `TrueHD`, `DTS-HD MA`, `PGS`, `HEVC`.
+    codec: str | None = None
+    # The audio channel layout (SINFO 40): `7.1`, `5.1`, `stereo`.
+    channels: str | None = None
+    # The video frame size (SINFO 19): `3840x2160`.
+    resolution: str | None = None
+    # A forced subtitle (stream flag 4096): shown even when subtitles are off, e.g. for translated on-screen text.
+    forced: bool = False
+    # A director's or alternate director's commentary (stream flags 1 and 2).
+    commentary: bool = False
+
+
 class ScanTitle(BaseModel):
     index: int
     duration_seconds: int
@@ -84,6 +103,8 @@ class ScanTitle(BaseModel):
     # MakeMKV's metadata language of the title (TINFO 28), terminological ISO 639-2. A disc that carries the film once
     # per language, with the same audio but its own opening text and credits, tells the playlists apart by it.
     metadata_language: str | None = None
+    # The title's streams in stream order (SINFO), without the ones MakeMKV derives itself (an audio core).
+    streams: list[ScanStream] = Field(default_factory=list)
 
 
 class DiscFingerprintInput(BaseModel):
