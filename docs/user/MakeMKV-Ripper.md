@@ -17,6 +17,8 @@ The key path is `/home/arm/.MakeMKV/settings.conf` inside the container. The Doc
 
 The image ships a Java runtime, so MakeMKV can run a Blu-ray's BD-J menu code. On discs with decoy playlists (dozens of near-identical playlists, some longer than the film) it uses that to find the real film and comments it `FPL_MainFeature`. The main-feature preset follows that pick instead of taking the longest title.
 
+Many UHDs carry the film once per language group: the same length and audio, but the opening text and credits translated. When TheDiscDB is enabled and the film is identified, the main-feature preset keeps the variant that plays the clips TheDiscDB marks as the film's main movie on any release of it (MakeMKV's segment map, e.g. `55,56`), so a pressing TheDiscDB has no entry for still gets the original. Without such a match the audio-language preference decides, as before.
+
 ## Verifying the key after start
 
 Ripper containers are named `arm-ripper-<serial>-<id>` and carry the label `arm.drive_id`:

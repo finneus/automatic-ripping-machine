@@ -402,3 +402,60 @@ def test_review_excludes_the_decoys_next_to_the_marked_title():
     scan = _commented((130, None), (121, MAKEMKV_MAIN_FEATURE_COMMENT))
     rows = select_tracks_for_review("job_01JZXR7K3M5Q8N4VWA00000001", scan, _preset(TrackSelection.MAIN_FEATURE))
     assert [(r.index, r.excluded) for r in rows] == [(0, True), (1, False)]
+
+
+# --- TheDiscDB's main movie among the variants (segment maps) -----------------------------------------------------
+
+
+def _segment_variants(*maps: str) -> ScanResult:
+    """The Force Awakens UHD (European pressing): four playlists, same length, audio and title language; only the
+    first clip (the opening text) differs."""
+    return ScanResult(
+        disc_type=DiscType.BLURAY,
+        titles=[
+            ScanTitle(
+                index=i,
+                duration_seconds=8286,
+                audio_languages=["eng", "fra", "deu", "ita"],
+                size_bytes=58_000,
+                metadata_language="eng",
+                segment_map=segment_map,
+            )
+            for i, segment_map in enumerate(maps)
+        ],
+    )
+
+
+_FORCE_AWAKENS = _segment_variants("59,56", "57,56", "58,56", "55,56")  # 00802, 00803, 00801, 00800
+
+
+def _main_with(scan: ScanResult, reference: frozenset[str], preferred: tuple[str, ...] = ("deu", "eng")) -> str:
+    tracks = select_tracks(
+        "job_01JZXR7K3M5Q8N4VWA00000001", scan, _preset(TrackSelection.MAIN_FEATURE), preferred, reference
+    )
+    return tracks[0].source_ref
+
+
+def test_main_feature_takes_the_variant_that_plays_thediscdbs_main_movie():
+    assert _main_with(_FORCE_AWAKENS, frozenset({"901,902", "55,56"})) == "3"
+
+
+def test_main_feature_ignores_a_reference_no_variant_plays():
+    assert _main_with(_FORCE_AWAKENS, frozenset({"901,902"})) == _main(_FORCE_AWAKENS, ("deu", "eng"))
+
+
+def test_main_feature_reference_never_reaches_a_shorter_title():
+    scan = _variants((8590, ["eng"], 10), (3000, ["eng"], 10))
+    scan.titles[1].segment_map = "55,56"
+    assert _main_with(scan, frozenset({"55,56"})) == "0"
+
+
+def test_review_keeps_the_reference_variant_and_excludes_the_rest():
+    rows = select_tracks_for_review(
+        "job_01JZXR7K3M5Q8N4VWA00000001",
+        _FORCE_AWAKENS,
+        _preset(TrackSelection.MAIN_FEATURE),
+        ("deu", "eng"),
+        frozenset({"55,56"}),
+    )
+    assert [(t.source_ref, t.excluded) for t in rows] == [("0", True), ("1", True), ("2", True), ("3", False)]

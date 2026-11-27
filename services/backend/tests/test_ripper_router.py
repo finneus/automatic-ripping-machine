@@ -1211,13 +1211,19 @@ def _scan_dict_with_hash() -> dict[str, Any]:
 
 
 class _FakeStore:
-    def __init__(self, match: DiscMatch | None) -> None:
+    def __init__(self, match: DiscMatch | None, maps: frozenset[str] = frozenset()) -> None:
         self.match = match
+        self.maps = maps
         self.called_with: list[str] = []
+        self.maps_asked: list[str] = []
 
     def lookup(self, content_hash: str) -> DiscMatch | None:
         self.called_with.append(content_hash)
         return self.match
+
+    def main_movie_segment_maps(self, imdb_id: str) -> frozenset[str]:
+        self.maps_asked.append(imdb_id)
+        return self.maps
 
 
 def test_identify_thediscdb_match_stamps_map_and_uses_exact_identity() -> None:
@@ -3776,3 +3782,107 @@ def test_identify_single_fuzzy_cd_hit_is_applied_with_music_auto_apply_on() -> N
     out = _identify_with(db, result, _scan_dict("cd")).json()
     assert out["status"] == "identified" and out["title"] == "Album"
     assert out["metadata_json"].get("identity_suggestion") is None
+
+
+# --- main feature among same-length variants: TheDiscDB's main movie by segment map -------------------------------
+
+_MAIN_FEATURE_PRESET = RipPreset(
+    id="rpr_main_feature",
+    name="Main feature only",
+    media_type=MediaType.MOVIE,
+    is_builtin=False,
+    track_selection=TrackSelection.MAIN_FEATURE,
+    identification_mode=IdentificationMode.SKIP,
+    output_mode=OutputMode.TRACKS,
+)
+_MAIN_FEATURE_SESSION = Session(
+    id="ses_routed",
+    name="Main feature session",
+    media_type=MediaType.MOVIE,
+    is_builtin=False,
+    rip_preset_id="rpr_main_feature",
+    output_path_template="{title}/{title}.mkv",
+)
+# The Force Awakens UHD (European pressing): 00802, 00803, 00801, 00800 - only the opening clip differs.
+_FORCE_AWAKENS_TITLES = [
+    {"index": i, "duration_seconds": 8286, "size_bytes": 58_000, "audio_languages": ["eng"], "segment_map": m}
+    for i, m in enumerate(["59,56", "57,56", "58,56", "55,56"])
+]
+
+
+def test_identify_hold_keeps_the_variant_thediscdb_marks_the_main_movie() -> None:
+    """The disc's own hash is unknown to TheDiscDB, but the film's other pressing plays its main movie from clips
+    55,56: the review keeps that variant, not the first of four equal ones."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config(hold_for_review=True, thediscdb_enabled=True)]
+    db.rows["rip_presets"] = [_movie_preset(), _MAIN_FEATURE_PRESET]
+    db.rows["sessions"] = [_MAIN_FEATURE_SESSION]
+    result = MetadataResult(
+        title="Star Wars: The Force Awakens", year=2015, kind="movie", payload={"imdb_id": "tt2488496"}
+    )
+    app = _make_app(db, dispatcher=_Dispatcher(result))
+    app.state.thediscdb = _FakeStore(None, frozenset({"55,56"}))
+    scan = _scan_dict("bluray")
+    scan["titles"] = _FORCE_AWAKENS_TITLES
+    body = {"drive_id": "drv_x", "scan_result": scan, "pending_session_id": "ses_routed"}
+    with TestClient(app) as client:
+        r = client.post("/api/ripper/identify", json=body, headers=_SERVICE_AUTH)
+    assert r.status_code == 200
+    assert app.state.thediscdb.maps_asked == ["tt2488496"]
+    tracks = {row.source_ref: row for row in db.added if type(row).__name__ == "Track"}
+    assert [ref for ref, t in sorted(tracks.items()) if not t.excluded] == ["3"]
+
+
+def _identified_variants_job() -> Job:
+    meta = {
+        "scan_result": {**_scan_dict("bluray"), "titles": _FORCE_AWAKENS_TITLES},
+        "identity": {"provider": "tmdb", "external_ids": {"imdb": "tt2488496"}},
+    }
+    job = _job(status=JobStatus.IDENTIFIED, disc_type=DiscType.BLURAY, meta=meta)
+    job.media_type = MediaType.MOVIE
+    job.pending_session_id = "ses_routed"
+    return job
+
+
+def _rip_start_variants(
+    thediscdb_enabled: bool, monkeypatch: pytest.MonkeyPatch
+) -> tuple[list[Any], _FakeStore]:
+    """rip-start through the real selection; the fake session fills no column defaults, so the selected rows get the
+    ones the database would give them."""
+    real = ripper_router.select_tracks
+
+    def select(*args: Any, **kwargs: Any) -> list[Track]:
+        rows = real(*args, **kwargs)
+        for row in rows:
+            row.status, row.attempts = TrackStatus.QUEUED, 0
+        return rows
+
+    monkeypatch.setattr(ripper_router, "select_tracks", select)
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config(thediscdb_enabled=thediscdb_enabled)]
+    db.rows["jobs"] = [_identified_variants_job()]
+    db.rows["tracks"] = []
+    db.rows["rip_presets"] = [_MAIN_FEATURE_PRESET]
+    db.rows["sessions"] = [_MAIN_FEATURE_SESSION]
+    app = _make_app(db)
+    store = _FakeStore(None, frozenset({"55,56"}))
+    app.state.thediscdb = store
+    with TestClient(app) as client:
+        r = client.post("/api/ripper/jobs/job_01JZXR7K3M5Q8N4VWA00000001/rip-start", headers=_OWNER_HEADERS)
+    assert r.status_code == 200
+    return [row for row in db.added if type(row).__name__ == "Track"], store
+
+
+def test_rip_start_rips_the_variant_thediscdb_marks_the_main_movie(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracks, store = _rip_start_variants(True, monkeypatch)
+    assert {t.source_ref for t in tracks} == {"3"}
+    assert store.maps_asked == ["tt2488496"]
+
+
+def test_rip_start_leaves_thediscdb_alone_while_it_is_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracks, store = _rip_start_variants(False, monkeypatch)
+    assert len({t.source_ref for t in tracks}) == 1
+    assert store.maps_asked == []
+
