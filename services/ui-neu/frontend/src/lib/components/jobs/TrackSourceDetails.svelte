@@ -14,22 +14,40 @@
 
 <dl class="track-source-details" data-testid="track-source-details">
 	{#if details.source}
-		<div><dt>Source</dt><dd class="mono">{details.source}</dd></div>
+		<div>
+			<dt>Source</dt>
+			<dd class="mono">{details.source}</dd>
+		</div>
 	{/if}
 	{#if details.video}
-		<div><dt>Video</dt><dd>{details.video}</dd></div>
+		<div>
+			<dt>Video</dt>
+			<dd>{details.video}</dd>
+		</div>
 	{/if}
 	{#if details.audio.length}
-		<div><dt>Audio</dt><dd>{details.audio.join(' · ')}</dd></div>
+		<div>
+			<dt>Audio</dt>
+			<dd>{details.audio.join(', ')}</dd>
+		</div>
 	{/if}
 	{#if details.subtitles.length}
-		<div><dt>Subtitles</dt><dd>{details.subtitles.join(' · ')}</dd></div>
+		<div>
+			<dt>Subtitles</dt>
+			<dd>{details.subtitles.join(', ')}</dd>
+		</div>
 	{/if}
 	{#if details.chapters != null}
-		<div><dt>Chapters</dt><dd>{details.chapters}</dd></div>
+		<div>
+			<dt>Chapters</dt>
+			<dd>{details.chapters}</dd>
+		</div>
 	{/if}
 	{#if details.segments}
-		<div><dt>Segments</dt><dd class="mono">{details.segments}</dd></div>
+		<div>
+			<dt>Segments</dt>
+			<dd class="mono">{details.segments}</dd>
+		</div>
 	{/if}
 </dl>
 

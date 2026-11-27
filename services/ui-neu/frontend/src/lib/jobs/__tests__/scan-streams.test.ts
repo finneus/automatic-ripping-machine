@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	audioLabel,
-	scanTitleAt,
-	scanTitlesOf,
-	subtitleLabel,
-	titleDetails
-} from '$lib/jobs/scan-streams';
+import { audioLabel, scanTitleAt, scanTitlesOf, subtitleLabel, titleDetails } from '$lib/jobs/scan-streams';
 import type { ScanStream, ScanTitle } from '$lib/types/api.gen';
 
 const audio = (over: Partial<ScanStream>): ScanStream => ({ kind: 'audio', ...over }) as ScanStream;

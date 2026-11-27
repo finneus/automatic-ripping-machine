@@ -22,17 +22,22 @@ const full = {
 describe('TrackSourceDetails', () => {
 	it('lists every detail of the title', () => {
 		renderComponent(TrackSourceDetails, { props: { title: full } });
-		const box = screen.getByTestId('track-source-details');
-		expect(box).toHaveTextContent('Source00800.mpls');
-		expect(box).toHaveTextContent('VideoHEVC 3840x2160');
-		expect(box).toHaveTextContent('Audioeng TrueHD 7.1 · deu DD+ 5.1');
-		expect(box).toHaveTextContent('Subtitlesdeu (forced)');
-		expect(box).toHaveTextContent('Chapters26');
-		expect(box).toHaveTextContent('Segments55,56');
+		const rows = [...screen.getByTestId('track-source-details').querySelectorAll('div')].map((row) => [
+			row.querySelector('dt')?.textContent,
+			row.querySelector('dd')?.textContent
+		]);
+		expect(rows).toEqual([
+			['Source', '00800.mpls'],
+			['Video', 'HEVC 3840x2160'],
+			['Audio', 'eng TrueHD 7.1, deu DD+ 5.1'],
+			['Subtitles', 'deu (forced)'],
+			['Chapters', '26'],
+			['Segments', '55,56']
+		]);
 	});
 
 	it('leaves out what the scan does not know', () => {
 		renderComponent(TrackSourceDetails, { props: { title: { index: 0, duration_seconds: 60 } as ScanTitle } });
-		expect(screen.getByTestId('track-source-details')).toBeEmptyDOMElement();
+		expect(screen.getByTestId('track-source-details').querySelectorAll('div')).toHaveLength(0);
 	});
 });

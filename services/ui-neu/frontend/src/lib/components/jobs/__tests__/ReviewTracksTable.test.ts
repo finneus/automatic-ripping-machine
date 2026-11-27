@@ -112,7 +112,7 @@ describe('ReviewTracksTable', () => {
 				isMusic: false
 			}
 		});
-		expect(screen.getByTestId('track-source-details')).toHaveTextContent('Audioeng · deu');
+		expect(screen.getByTestId('track-source-details')).toHaveTextContent(/Audio\s*eng, deu/);
 	});
 
 	it('shows no title details on a music disc', () => {

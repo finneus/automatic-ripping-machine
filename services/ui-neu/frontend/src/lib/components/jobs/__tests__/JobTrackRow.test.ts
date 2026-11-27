@@ -404,7 +404,7 @@ describe('JobTrackRow', () => {
 			renderRow(failed(), { job: { metadata_json: scan } as Partial<JobView> });
 			const details = within(cell('Title')).getByTestId('track-source-details');
 			expect(details).toHaveTextContent('00800.mpls');
-			expect(details).toHaveTextContent('eng · deu');
+			expect(details).toHaveTextContent('eng, deu');
 		});
 
 		it('shows nothing for a track of another kind or without a scanned title', () => {
