@@ -24,6 +24,25 @@ def test_set_position_overrides_parsed_disc() -> None:
     }
 
 
+def test_placeholder_set_position_yields_to_the_disc_in_the_name() -> None:
+    """Studios often stamp every disc of a box `1 of 1`. A disc number in the
+    name above that total proves the set position is a placeholder, so the
+    name's disc wins and the impossible total is dropped."""
+    meta = BdDiscMeta(name="Suits: Season Seven\n(Disc 4)", language="eng", set_number=1, num_sets=1)
+    claims = BD_TITLE.run(_ctx(meta))
+    assert claims.job.model_dump(exclude_unset=True) == {"season": 7, "disc_number": 4, "title": "suits"}
+
+
+def test_set_position_within_its_total_still_wins() -> None:
+    claims = BD_TITLE.run(_ctx(BdDiscMeta(name="Show (Disc 2)", set_number=3, num_sets=4)))
+    assert claims.job.model_dump(exclude_unset=True) == {"disc_number": 3, "disc_total": 4, "title": "show"}
+
+
+def test_name_disc_above_total_without_set_number_keeps_the_meta_total_out() -> None:
+    claims = BD_TITLE.run(_ctx(BdDiscMeta(name="Show (Disc 5)", num_sets=2)))
+    assert claims.job.model_dump(exclude_unset=True) == {"disc_number": 5, "title": "show"}
+
+
 def test_name_only() -> None:
     claims = BD_TITLE.run(_ctx(BdDiscMeta(name="Arrival")))
     assert claims.job.model_dump(exclude_unset=True) == {"title": "arrival"}
