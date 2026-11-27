@@ -4545,6 +4545,43 @@ export type ScanResult = {
 };
 
 /**
+ * ScanStream
+ *
+ * One video, audio or subtitle stream of a scanned title, as MakeMKV lists it (SINFO). The review shows them
+ * beside each title, so the operator can tell same-length variants of the film apart.
+ */
+export type ScanStream = {
+    /**
+     * Kind
+     */
+    kind: 'video' | 'audio' | 'subtitle';
+    /**
+     * Language
+     */
+    language?: string | null;
+    /**
+     * Codec
+     */
+    codec?: string | null;
+    /**
+     * Channels
+     */
+    channels?: string | null;
+    /**
+     * Resolution
+     */
+    resolution?: string | null;
+    /**
+     * Forced
+     */
+    forced?: boolean;
+    /**
+     * Commentary
+     */
+    commentary?: boolean;
+};
+
+/**
  * ScanTitle
  */
 export type ScanTitle = {
@@ -4588,6 +4625,10 @@ export type ScanTitle = {
      * Metadata Language
      */
     metadata_language?: string | null;
+    /**
+     * Streams
+     */
+    streams?: Array<ScanStream>;
 };
 
 /**

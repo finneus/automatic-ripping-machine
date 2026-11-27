@@ -389,4 +389,30 @@ describe('JobTrackRow', () => {
 			await waitFor(() => expect(ontitleapplied).toHaveBeenCalledTimes(1));
 		});
 	});
+
+	describe('the scanned title under the title', () => {
+		const scan = {
+			scan_result: {
+				titles: [
+					{ index: 0, duration_seconds: 60 },
+					{ index: 2, duration_seconds: 8286, source_name: '00800.mpls', audio_languages: ['eng', 'deu'] }
+				]
+			}
+		};
+
+		it('shows the playlist and audio of the title the video track was made from', () => {
+			renderRow(failed(), { job: { metadata_json: scan } as Partial<JobView> });
+			const details = within(cell('Title')).getByTestId('track-source-details');
+			expect(details).toHaveTextContent('00800.mpls');
+			expect(details).toHaveTextContent('eng, deu');
+		});
+
+		it('shows nothing for a track of another kind or without a scanned title', () => {
+			renderRow({ ...failed(), kind: 'data_dump' }, { job: { metadata_json: scan } as Partial<JobView> });
+			expect(screen.queryByTestId('track-source-details')).toBeNull();
+			cleanup();
+			renderRow(failed());
+			expect(screen.queryByTestId('track-source-details')).toBeNull();
+		});
+	});
 });

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderComponent, screen, cleanup, fireEvent } from '$lib/testing/render';
 import { updateTrack } from '$lib/api/jobs';
 import ReviewTracksTable from '../ReviewTracksTable.svelte';
-import type { TrackView } from '$lib/types/api.gen';
+import type { ScanTitle, TrackView } from '$lib/types/api.gen';
 import { createJob } from '../../../__fixtures__/job';
 
 vi.mock('$lib/stores/auth', async () => {
@@ -88,5 +88,43 @@ describe('ReviewTracksTable', () => {
 		expect(box).toBeChecked();
 		await fireEvent.click(box);
 		expect(updateTrack).toHaveBeenCalledWith(expect.anything(), 'trk_0', { excluded: true });
+	});
+
+	it('shows each video title its playlist and audio, before and after the tracks exist', () => {
+		const scanTitles = [
+			{ index: 0, duration_seconds: 8286, source_name: '00802.mpls', audio_languages: ['eng'] },
+			{ index: 3, duration_seconds: 8286, source_name: '00800.mpls', audio_languages: ['eng', 'deu'] }
+		] as ScanTitle[];
+		renderComponent(ReviewTracksTable, {
+			props: { job: createJob({}), tracks: [], scanTitles, isVideo: true, isMusic: false }
+		});
+		expect(screen.getAllByTestId('track-source-details').map((d) => d.textContent)).toEqual([
+			expect.stringContaining('00802.mpls'),
+			expect.stringContaining('00800.mpls')
+		]);
+		cleanup();
+		renderComponent(ReviewTracksTable, {
+			props: {
+				job: createJob({}),
+				tracks: [track({ id: 'trk_3', index: 3, source_ref: '3' })],
+				scanTitles,
+				isVideo: true,
+				isMusic: false
+			}
+		});
+		expect(screen.getByTestId('track-source-details')).toHaveTextContent(/Audio\s*eng, deu/);
+	});
+
+	it('shows no title details on a music disc', () => {
+		renderComponent(ReviewTracksTable, {
+			props: {
+				job: createJob({}),
+				tracks: [],
+				scanTitles: [{ index: 0, duration_seconds: 200, source_name: 'x' }] as ScanTitle[],
+				isVideo: false,
+				isMusic: true
+			}
+		});
+		expect(screen.queryByTestId('track-source-details')).toBeNull();
 	});
 });
