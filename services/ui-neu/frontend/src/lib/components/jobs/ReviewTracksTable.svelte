@@ -7,6 +7,8 @@
 	import { parseEpisodeNumber } from '$lib/jobs/track-edit';
 	import { INCLUDE_TRACK_HINT } from '$lib/jobs/track-fields';
 	import TrackTitleSearch from '../match/TrackTitleSearch.svelte';
+	import TrackSourceDetails from './TrackSourceDetails.svelte';
+	import { scanTitleAt } from '$lib/jobs/scan-streams';
 	import { isAdmin } from '$lib/stores/auth';
 	interface Props {
 		job: JobView;
@@ -83,6 +85,7 @@
 					<tbody>
 						{#each rows as row (row.trackId ?? `scan-${row.index}`)}
 							{@const trackId = row.trackId}
+							{@const scanTitle = isVideo ? scanTitleAt(scanTitles, row.index) : undefined}
 							<tr class="table-row" data-disabled={row.excluded}>
 								<td class="table-cell mono">{row.index}</td>
 								<td
@@ -105,6 +108,9 @@
 										>
 									{:else}
 										<span class="review-tracks-table-faint">-</span>
+									{/if}
+									{#if scanTitle}
+										<TrackSourceDetails title={scanTitle} />
 									{/if}
 								</td>
 								{#if isVideo}

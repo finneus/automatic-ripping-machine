@@ -1,12 +1,15 @@
 from pathlib import Path
 
 from arm_common import DiscType
-from arm_common.schemas import ScanTitle
+from arm_common.schemas import ScanStream, ScanTitle
 from arm_ripper.scan.makemkv_info import (
+    _SINFO_TYPE,
     _TINFO_FIELDS,
     _InfoParser,
     _split_robot_line,
+    _scan_stream,
     _scan_title,
+    _stream_flags,
     _to_int,
     parse_makemkvcon_info,
 )
@@ -394,3 +397,62 @@ def test_reads_a_titles_metadata_language_as_a_terminological_code():
     ]
     _label, titles, _disc_type = parse_makemkvcon_info(lines)
     assert [t.metadata_language for t in titles] == ["deu", "eng", None, None]
+
+
+# --- SINFO: each title's streams ------------------------------------------------------------------------------------
+
+_STREAM_DISC = [
+    'TINFO:0,9,0,"2:18:06"',
+    'SINFO:0,0,1,6201,"Video"',
+    'SINFO:0,0,6,0,"HEVC"',
+    'SINFO:0,0,19,0,"3840x2160"',
+    'SINFO:0,1,1,6202,"Audio"',
+    'SINFO:0,1,3,0,"eng"',
+    'SINFO:0,1,6,0,"TrueHD"',
+    'SINFO:0,1,40,0,"7.1"',
+    'SINFO:0,2,1,6202,"Audio"',
+    'SINFO:0,2,3,0,"eng"',
+    'SINFO:0,2,6,0,"AC3"',
+    'SINFO:0,2,22,0,"2048"',
+    'SINFO:0,3,1,6202,"Audio"',
+    'SINFO:0,3,3,0,"ger"',
+    'SINFO:0,3,6,0,"DD+"',
+    'SINFO:0,3,40,0,"5.1"',
+    'SINFO:0,4,1,6202,"Audio"',
+    'SINFO:0,4,3,0,"eng"',
+    'SINFO:0,4,6,0,"AC3"',
+    'SINFO:0,4,22,0,"1"',
+    'SINFO:0,5,1,6203,"Subtitles"',
+    'SINFO:0,5,3,0,"ger"',
+    'SINFO:0,5,6,0,"PGS"',
+    'SINFO:0,5,22,0,"4096"',
+    'SINFO:0,6,1,6203,"Subtitles"',
+    'SINFO:0,6,3,0,"eng"',
+    'SINFO:0,6,22,0,"x"',
+    'SINFO:0,7,1,6209,"Unknown"',
+    'SINFO:0,8,3,0,"fra"',
+    'TINFO:1,9,0,"0:01:00"',
+]
+
+
+def test_reads_each_titles_streams_in_stream_order_without_derived_ones():
+    """SINFO 1/3/6/19/40/22: kind, language, codec, frame size, channel layout and flags of every stream. The AC3 core
+    MakeMKV derives from TrueHD (flag 2048) is left out; flag 1 marks a commentary, 4096 a forced subtitle."""
+    _, titles, _ = parse_makemkvcon_info(_STREAM_DISC)
+    assert titles[0].streams == [
+        ScanStream(kind="video", codec="HEVC", resolution="3840x2160"),
+        ScanStream(kind="audio", language="eng", codec="TrueHD", channels="7.1"),
+        ScanStream(kind="audio", language="deu", codec="DD+", channels="5.1"),
+        ScanStream(kind="audio", language="eng", codec="AC3", commentary=True),
+        ScanStream(kind="subtitle", language="deu", codec="PGS", forced=True),
+        ScanStream(kind="subtitle", language="eng"),
+    ]
+    assert titles[1].streams == []
+
+
+def test_stream_flags_alternate_commentary_and_unparseable_flags():
+    assert _stream_flags("2") == 2
+    assert _stream_flags("") == 0
+    assert _stream_flags("x") == 0
+    assert _scan_stream({_SINFO_TYPE: 6202, 22: "2"}) == ScanStream(kind="audio", commentary=True)
+    assert _scan_stream({_SINFO_TYPE: 6201, 22: 4096}) == ScanStream(kind="video", forced=True)

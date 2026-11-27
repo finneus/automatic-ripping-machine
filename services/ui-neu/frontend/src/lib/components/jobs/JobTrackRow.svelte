@@ -2,6 +2,8 @@
 	import PosterImage from '$lib/components/shared/PosterImage.svelte';
 	import StatusBadge from '$lib/components/shared/StatusBadge.svelte';
 	import TrackTitleSearch from '$lib/components/match/TrackTitleSearch.svelte';
+	import TrackSourceDetails from '$lib/components/jobs/TrackSourceDetails.svelte';
+	import { scanTitleAt, scanTitlesOf } from '$lib/jobs/scan-streams';
 	import { formatFps } from '$lib/transcode/fps';
 	import { INCLUDE_TRACK_HINT, isUnrippedExclusion, trackKindLabel, trackSizeLabel } from '$lib/jobs/track-fields';
 	import { formatTrackLength } from '$lib/utils/format';
@@ -40,6 +42,11 @@
 	// `checked={!track.excluded}` writes the input only when the value changes,
 	// and a failed save reloads the same value, so the box would keep the
 	// user's click. Once the save and reload settle, put the server's value back.
+	// The scanned title a video track was made from: its playlist, audio and subtitles tell variants apart.
+	let scanTitle = $derived(
+		track.kind === 'video_title' ? scanTitleAt(scanTitlesOf(job.metadata_json), track.index) : undefined
+	);
+
 	async function toggleIncluded(e: Event) {
 		const box = e.currentTarget as HTMLInputElement;
 		await onexcludedchange(track.id, !box.checked);
@@ -104,6 +111,9 @@
 			</div>
 		{:else}
 			{@render editTrigger(untitledText)}
+		{/if}
+		{#if scanTitle}
+			<TrackSourceDetails title={scanTitle} />
 		{/if}
 	</td>
 	{#if tracksAreSeries}
