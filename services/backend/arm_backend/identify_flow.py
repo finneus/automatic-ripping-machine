@@ -39,7 +39,8 @@ from arm_backend.identity.sources.thediscdb import (
 )
 from arm_backend.identity.sources.thediscdb_snapshot import DiscMatch, SnapshotStore
 from arm_backend.identity.stage_runner import EpisodeStageRunner
-from arm_backend.track_selection import DiscBackupNeedsBluray, select_tracks_for_review
+from arm_backend.main_feature_reference import reference_segment_maps
+from arm_backend.track_selection import DiscBackupNeedsBluray, main_feature_guess, select_tracks_for_review
 from arm_backend.ws import WSHub
 from arm_common import (
     Config,
@@ -57,12 +58,15 @@ from arm_common.schemas import (
     with_flags,
     IdentifyRequest,
     ScanResult,
+    ScanTitle,
 )
 
 logger = logging.getLogger("arm_backend.identify_flow")
 
 
-async def _persist_review_tracks(db: AsyncSession, job: Job, scan: ScanResult) -> None:
+async def _persist_review_tracks(
+    db: AsyncSession, job: Job, scan: ScanResult, reference: frozenset[str] = frozenset()
+) -> None:
     """Persist the scan's titles as Track rows for the timed review gate.
 
     Uses the default rip preset for the disc type to compute keep/drop defaults
@@ -79,11 +83,13 @@ async def _persist_review_tracks(db: AsyncSession, job: Job, scan: ScanResult) -
         t.source_ref for t in (await db.execute(select(Track).where(col(Track.job_id) == job.id))).scalars().all()
     }
     added: list[Track] = []
+    preferred = await preferred_audio_languages(db)
     try:
-        review_tracks = select_tracks_for_review(job.id, scan, preset, await preferred_audio_languages(db))
+        review_tracks = select_tracks_for_review(job.id, scan, preset, preferred, reference)
     except DiscBackupNeedsBluray as exc:
         logger.warning("skipping review tracks for job_id=%s: %s", job.id, exc)
         return
+    _hold_a_guessed_main_feature(job, main_feature_guess(scan, preset, preferred, reference))
     for track in review_tracks:
         if track.source_ref in existing_refs:
             continue
@@ -92,6 +98,21 @@ async def _persist_review_tracks(db: AsyncSession, job: Job, scan: ScanResult) -
     if added:
         record_preset(job, added, now=datetime.now(timezone.utc))
     await db.flush()
+
+
+def _hold_a_guessed_main_feature(job: Job, guessed: list[ScanTitle]) -> None:
+    """Pause the review countdown when the main feature was only a guess between equal variants (see
+    `main_feature_guess`): the operator picks one from their details instead of the disc ripping a localised one."""
+    if not guessed:
+        return
+    job.manual_pause = True
+    names = ", ".join(t.source_name or f"title {t.index}" for t in guessed)
+    logger.warning(
+        "main feature: %d same-length variants with nothing to tell them apart (%s); countdown paused, pick one",
+        len(guessed),
+        names,
+        extra={"job_id": job.id},
+    )
 
 
 # A miss stores at most this many dispatcher attempts (metadata_json.identify_attempts).
@@ -273,6 +294,12 @@ class IdentifyFlow:
             seen_algos.add(algo)
             self.session.add(DiscFingerprint(job_id=job.id, algo=algo, value=fp.value))
         await self.session.flush()
+
+    def _main_feature_reference(self, job: Job) -> frozenset[str]:
+        """TheDiscDB's main-movie segment maps for the job's film, while TheDiscDB is enabled (see
+        `main_feature_reference`)."""
+        store = self.thediscdb_store if self.cfg is not None and self.cfg.thediscdb_enabled else None
+        return reference_segment_maps(store, job)
 
     async def _lookup_thediscdb(self, job: Job, scan: ScanResult) -> DiscMatch | None:
         store = self.thediscdb_store
@@ -473,7 +500,7 @@ class IdentifyFlow:
         if cfg.hold_for_review:
             job.status = JobStatus.AWAITING_REVIEW
             job.wait_start_time = datetime.now(timezone.utc)
-            await _persist_review_tracks(self.session, job, scan)
+            await _persist_review_tracks(self.session, job, scan, self._main_feature_reference(job))
         else:
             job.status = JobStatus.IDENTIFIED
 
@@ -498,7 +525,7 @@ class IdentifyFlow:
         # title/year/poster still reach nothing but the suggestion.
         # result.kind is a subset of MediaType's values by construction.
         job.media_type = MediaType(result.kind)
-        await _persist_review_tracks(self.session, job, scan)
+        await _persist_review_tracks(self.session, job, scan, self._main_feature_reference(job))
         logger.info(
             "identify job_id=%s: %s hit %r held for confirmation (%s)",
             job.id,
@@ -526,7 +553,7 @@ class IdentifyFlow:
         # waits for Rip again or Discard. No countdown (wait_start_time
         # stays unset), so the ripper never auto-starts it.
         if job.status != JobStatus.AWAITING_REVIEW:
-            await _persist_review_tracks(self.session, job, scan)
+            await _persist_review_tracks(self.session, job, scan, self._main_feature_reference(job))
         job.status = JobStatus.AWAITING_REVIEW
         job.wait_start_time = None
         job.metadata_json = {

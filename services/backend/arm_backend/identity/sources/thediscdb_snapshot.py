@@ -10,6 +10,7 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 INDEX_FILENAME = "index.sqlite"
@@ -67,3 +68,23 @@ class SnapshotStore:
             release=json.loads(row[5]),
             release_seasons=json.loads(row[6]) if len(row) > 6 and row[6] else None,
         )
+
+    def main_movie_segment_maps(self, imdb_id: str) -> frozenset[str]:
+        """The segment map of every title TheDiscDB marks the main movie, on any disc of the film with this IMDb id
+        and whatever release it belongs to. Another pressing of the film (a region TheDiscDB has no hash for) often
+        plays it from the same clips, so a scanned title with one of these maps is the film there too."""
+        if not imdb_id or not self.exists():
+            return frozenset()
+        with sqlite3.connect(f"file:{self._path}?mode=ro", uri=True) as conn:
+            rows = conn.execute(
+                "SELECT disc_json FROM discs WHERE json_extract(metadata_json, '$.ExternalIds.Imdb') = ?", (imdb_id,)
+            ).fetchall()
+        return frozenset(_main_movie_maps(json.loads(row[0]) for row in rows))
+
+
+def _main_movie_maps(discs: Iterable[dict[str, Any]]) -> Iterator[str]:
+    """The segment maps of the titles a disc's TheDiscDB entry marks `MainMovie`."""
+    for disc in discs:
+        for title in disc.get("Titles") or []:
+            if (title.get("Item") or {}).get("Type") == "MainMovie" and title.get("SegmentMap"):
+                yield str(title["SegmentMap"])

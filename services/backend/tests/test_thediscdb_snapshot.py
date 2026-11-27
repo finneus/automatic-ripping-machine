@@ -321,3 +321,58 @@ def test_index_ignores_episodes_without_a_usable_season(tmp_path: Path) -> None:
     build_index(_series_tarball(tmp_path, discs=[("s1", disc)]), tmp_path / "index.sqlite")
     hit = SnapshotStore(tmp_path).lookup("C" * 32)
     assert hit is not None and hit.release_seasons == [1]
+
+
+def _index_with(tmp_path: Path, discs: list[tuple[str, dict, dict]]) -> SnapshotStore:
+    """An index built from (title folder, metadata, disc) entries, each its own release."""
+    tar_path = tmp_path / "data.tar.gz"
+    with tarfile.open(tar_path, "w:gz") as tar:
+        for n, (folder, metadata, disc) in enumerate(discs):
+            base = f"data-main/data/movie/{folder}"
+            for name, obj in [
+                (f"{base}/metadata.json", metadata),
+                (f"{base}/release-{n}/release.json", {"Slug": f"release-{n}", "Title": "R"}),
+                (f"{base}/release-{n}/disc01.json", disc),
+            ]:
+                raw = json.dumps(obj).encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(raw)
+                tar.addfile(info, io.BytesIO(raw))
+    build_index(tar_path, tmp_path / "index.sqlite")
+    return SnapshotStore(tmp_path)
+
+
+def _title(source: str, segments: str | None, kind: str | None) -> dict:
+    title: dict = {"Index": 0, "SourceFile": source, "Duration": "2:18:06"}
+    if segments is not None:
+        title["SegmentMap"] = segments
+    if kind is not None:
+        title["Item"] = {"Title": "The Force Awakens", "Type": kind}
+    return title
+
+
+def test_main_movie_segment_maps_collects_every_release_of_the_film(tmp_path: Path) -> None:
+    film = {"Title": "The Force Awakens", "ExternalIds": {"Imdb": "tt2488496"}}
+    other = {"Title": "Round Midnight", "ExternalIds": {"Imdb": "tt0090557"}}
+    uhd = {
+        "ContentHash": "A" * 32,
+        "Titles": [_title("00800.mpls", "55,56", "MainMovie"), _title("00802.mpls", "62,56", None)],
+    }
+    bluray = {
+        "ContentHash": "B" * 32,
+        "Titles": [_title("00800.mpls", "901,902", "MainMovie"), _title("00010.mpls", "7", "Extra")],
+    }
+    no_map = {"ContentHash": "C" * 32, "Titles": [_title("00001.mpls", None, "MainMovie")]}
+    elsewhere = {"ContentHash": "D" * 32, "Titles": [_title("00001.mpls", "1,2", "MainMovie")]}
+    store = _index_with(
+        tmp_path,
+        [("Force (2015)", film, uhd), ("Force (2015)", film, bluray), ("Force (2015)", film, no_map),
+         ("Round (1986)", other, elsewhere)],
+    )
+    assert store.main_movie_segment_maps("tt2488496") == frozenset({"55,56", "901,902"})
+    assert store.main_movie_segment_maps("tt0000001") == frozenset()
+    assert store.main_movie_segment_maps("") == frozenset()
+
+
+def test_main_movie_segment_maps_without_an_index_is_empty(tmp_path: Path) -> None:
+    assert SnapshotStore(tmp_path).main_movie_segment_maps("tt2488496") == frozenset()
