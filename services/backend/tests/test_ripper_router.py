@@ -3845,9 +3845,7 @@ def _identified_variants_job() -> Job:
     return job
 
 
-def _rip_start_variants(
-    thediscdb_enabled: bool, monkeypatch: pytest.MonkeyPatch
-) -> tuple[list[Any], _FakeStore]:
+def _rip_start_variants(thediscdb_enabled: bool, monkeypatch: pytest.MonkeyPatch) -> tuple[list[Any], _FakeStore]:
     """rip-start through the real selection; the fake session fills no column defaults, so the selected rows get the
     ones the database would give them."""
     real = ripper_router.select_tracks
