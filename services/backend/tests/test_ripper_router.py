@@ -3845,9 +3845,7 @@ def _identified_variants_job() -> Job:
     return job
 
 
-def _rip_start_variants(
-    thediscdb_enabled: bool, monkeypatch: pytest.MonkeyPatch
-) -> tuple[list[Any], _FakeStore]:
+def _rip_start_variants(thediscdb_enabled: bool, monkeypatch: pytest.MonkeyPatch) -> tuple[list[Any], _FakeStore]:
     """rip-start through the real selection; the fake session fills no column defaults, so the selected rows get the
     ones the database would give them."""
     real = ripper_router.select_tracks
@@ -3920,7 +3918,6 @@ def test_identify_hold_pauses_the_countdown_when_the_main_feature_is_a_guess(cap
 def test_identify_hold_keeps_the_countdown_when_thediscdb_names_the_variant() -> None:
     _out, rows = _identify_force_awakens(frozenset({"55,56"}))
     assert not rows["job"].manual_pause
-
 
 
 def test_hold_names_a_variant_without_a_playlist_by_its_title_index(caplog: pytest.LogCaptureFixture) -> None:
