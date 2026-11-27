@@ -7,6 +7,7 @@ from arm_backend.track_selection import (
     MAKEMKV_MAIN_FEATURE_COMMENT,
     MAIN_FEATURE_MIN_SECONDS,
     MAIN_FEATURE_TIE_SECONDS,
+    main_feature_guess,
     select_tracks,
     select_tracks_for_review,
 )
@@ -459,3 +460,42 @@ def test_review_keeps_the_reference_variant_and_excludes_the_rest():
         frozenset({"55,56"}),
     )
     assert [(t.source_ref, t.excluded) for t in rows] == [("0", True), ("1", True), ("2", True), ("3", False)]
+
+
+# --- a main feature that was only a guess between equal variants ---------------------------------------------------
+
+
+def test_guess_lists_the_variants_that_tie_on_every_signal():
+    guessed = main_feature_guess(_FORCE_AWAKENS, _preset(TrackSelection.MAIN_FEATURE), ("deu", "eng"))
+    assert [t.index for t in guessed] == [0, 1, 2, 3]
+
+
+def test_size_alone_is_no_evidence():
+    """Episode V: the four variants differ by a few bytes (a longer translated opening); the largest is no better."""
+    scan = _FORCE_AWAKENS.model_copy(deep=True)
+    scan.titles[3].size_bytes = 58_001
+    assert len(main_feature_guess(scan, _preset(TrackSelection.MAIN_FEATURE))) == 4
+
+
+def test_no_guess_when_thediscdb_names_the_variant():
+    reference = frozenset({"55,56"})
+    assert main_feature_guess(_FORCE_AWAKENS, _preset(TrackSelection.MAIN_FEATURE), ("deu",), reference) == []
+
+
+def test_no_guess_when_the_languages_tell_the_variants_apart():
+    assert main_feature_guess(_SKYFALL, _preset(TrackSelection.MAIN_FEATURE)) == []
+    assert main_feature_guess(_localised("fra", "eng"), _preset(TrackSelection.MAIN_FEATURE), ("eng",)) == []
+
+
+def test_two_of_three_variants_can_tie_above_the_third():
+    scan = _localised("eng", "eng", "fra")
+    assert [t.index for t in main_feature_guess(scan, _preset(TrackSelection.MAIN_FEATURE), ("eng",))] == [0, 1]
+
+
+def test_no_guess_for_a_single_feature_another_preset_or_another_disc():
+    single = _variants((8590, ["eng"], 10), (600, ["eng"], 10))
+    assert main_feature_guess(single, _preset(TrackSelection.MAIN_FEATURE)) == []
+    assert main_feature_guess(_FORCE_AWAKENS, _preset(TrackSelection.ALL_TRACKS)) == []
+    cd = ScanResult(disc_type=DiscType.CD, titles=[ScanTitle(index=0, duration_seconds=200)])
+    assert main_feature_guess(cd, _preset(TrackSelection.MAIN_FEATURE)) == []
+    assert main_feature_guess(ScanResult(disc_type=DiscType.BLURAY), _preset(TrackSelection.MAIN_FEATURE)) == []
