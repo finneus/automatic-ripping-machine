@@ -88,14 +88,44 @@ def _main_feature(titles: list[ScanTitle], preferred: Sequence[str], reference: 
     MakeMKV comments a title `MAKEMKV_MAIN_FEATURE_COMMENT`, only such titles are candidates: a decoy playlist can be
     the longest title on the disc. When a variant plays the clips TheDiscDB marks the film's main movie (`reference`,
     segment maps), only such variants are candidates: the others carry a translated opening and credits."""
+    return max(_main_feature_candidates(titles, reference), key=lambda t: _variant_rank(t, preferred))
+
+
+def _main_feature_candidates(titles: list[ScanTitle], reference: Set[str]) -> list[ScanTitle]:
+    """The same-length variants of the film `_main_feature` ranks (see there for which titles they are)."""
     duplicates = bare_clip_duplicates(titles)
     pool = [t for t in titles if t.index not in duplicates] or titles
     pool = [t for t in pool if t.comment == MAKEMKV_MAIN_FEATURE_COMMENT] or pool
     eligible = [t for t in pool if t.duration_seconds >= MAIN_FEATURE_MIN_SECONDS] or pool
     longest = max(t.duration_seconds for t in eligible)
     variants = [t for t in eligible if longest - t.duration_seconds <= MAIN_FEATURE_TIE_SECONDS]
-    variants = [t for t in variants if t.segment_map in reference] or variants
-    return max(variants, key=lambda t: _variant_rank(t, preferred))
+    return [t for t in variants if t.segment_map in reference] or variants
+
+
+def _evidence(title: ScanTitle, preferred: Sequence[str]) -> tuple[tuple[bool, ...], tuple[bool, ...], int]:
+    """`_variant_rank` without the size: a few bytes more (a longer translated opening) say nothing about which
+    variant is the original."""
+    audio, metadata, count, _size = _variant_rank(title, preferred)
+    return audio, metadata, count
+
+
+def main_feature_guess(
+    scan: ScanResult, rip_preset: RipPreset, preferred: Sequence[str] = (), reference: Set[str] = frozenset()
+) -> list[ScanTitle]:
+    """The variants a main-feature pick could only guess between: two or more same-length titles that tie on
+    everything that tells variants apart (TheDiscDB's main movie, MakeMKV's comment, audio and title languages), so
+    size or index decided. Empty when the pick had evidence, or the preset does not pick a main feature."""
+    if rip_preset.track_selection != TrackSelection.MAIN_FEATURE or scan.disc_type not in (
+        DiscType.DVD,
+        DiscType.BLURAY,
+    ):
+        return []
+    if not scan.titles:
+        return []
+    candidates = _main_feature_candidates(scan.titles, reference)
+    best = max(_evidence(t, preferred) for t in candidates)
+    tied = [t for t in candidates if _evidence(t, preferred) == best]
+    return tied if len(tied) > 1 else []
 
 
 def _select_video(

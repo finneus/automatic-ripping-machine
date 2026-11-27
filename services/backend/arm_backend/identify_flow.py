@@ -40,7 +40,7 @@ from arm_backend.identity.sources.thediscdb import (
 from arm_backend.identity.sources.thediscdb_snapshot import DiscMatch, SnapshotStore
 from arm_backend.identity.stage_runner import EpisodeStageRunner
 from arm_backend.main_feature_reference import reference_segment_maps
-from arm_backend.track_selection import DiscBackupNeedsBluray, select_tracks_for_review
+from arm_backend.track_selection import DiscBackupNeedsBluray, main_feature_guess, select_tracks_for_review
 from arm_backend.ws import WSHub
 from arm_common import (
     Config,
@@ -58,6 +58,7 @@ from arm_common.schemas import (
     with_flags,
     IdentifyRequest,
     ScanResult,
+    ScanTitle,
 )
 
 logger = logging.getLogger("arm_backend.identify_flow")
@@ -82,13 +83,13 @@ async def _persist_review_tracks(
         t.source_ref for t in (await db.execute(select(Track).where(col(Track.job_id) == job.id))).scalars().all()
     }
     added: list[Track] = []
+    preferred = await preferred_audio_languages(db)
     try:
-        review_tracks = select_tracks_for_review(
-            job.id, scan, preset, await preferred_audio_languages(db), reference
-        )
+        review_tracks = select_tracks_for_review(job.id, scan, preset, preferred, reference)
     except DiscBackupNeedsBluray as exc:
         logger.warning("skipping review tracks for job_id=%s: %s", job.id, exc)
         return
+    _hold_a_guessed_main_feature(job, main_feature_guess(scan, preset, preferred, reference))
     for track in review_tracks:
         if track.source_ref in existing_refs:
             continue
@@ -97,6 +98,21 @@ async def _persist_review_tracks(
     if added:
         record_preset(job, added, now=datetime.now(timezone.utc))
     await db.flush()
+
+
+def _hold_a_guessed_main_feature(job: Job, guessed: list[ScanTitle]) -> None:
+    """Pause the review countdown when the main feature was only a guess between equal variants (see
+    `main_feature_guess`): the operator picks one from their details instead of the disc ripping a localised one."""
+    if not guessed:
+        return
+    job.manual_pause = True
+    names = ", ".join(t.source_name or f"title {t.index}" for t in guessed)
+    logger.warning(
+        "main feature: %d same-length variants with nothing to tell them apart (%s); countdown paused, pick one",
+        len(guessed),
+        names,
+        extra={"job_id": job.id},
+    )
 
 
 # A miss stores at most this many dispatcher attempts (metadata_json.identify_attempts).

@@ -3886,3 +3886,54 @@ def test_rip_start_leaves_thediscdb_alone_while_it_is_disabled(monkeypatch: pyte
     assert len({t.source_ref for t in tracks}) == 1
     assert store.maps_asked == []
 
+
+def _identify_force_awakens(thediscdb_maps: frozenset[str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config(hold_for_review=True, thediscdb_enabled=True)]
+    db.rows["rip_presets"] = [_movie_preset(), _MAIN_FEATURE_PRESET]
+    db.rows["sessions"] = [_MAIN_FEATURE_SESSION]
+    result = MetadataResult(
+        title="Star Wars: The Force Awakens", year=2015, kind="movie", payload={"imdb_id": "tt2488496"}
+    )
+    app = _make_app(db, dispatcher=_Dispatcher(result))
+    app.state.thediscdb = _FakeStore(None, thediscdb_maps)
+    scan = _scan_dict("bluray")
+    scan["titles"] = [{**t, "source_name": f"0080{n}.mpls"} for n, t in zip((2, 3, 1, 0), _FORCE_AWAKENS_TITLES)]
+    body = {"drive_id": "drv_x", "scan_result": scan, "pending_session_id": "ses_routed"}
+    with TestClient(app) as client:
+        r = client.post("/api/ripper/identify", json=body, headers=_SERVICE_AUTH)
+    assert r.status_code == 200
+    return r.json(), {"job": db.rows["jobs"][0]}
+
+
+def test_identify_hold_pauses_the_countdown_when_the_main_feature_is_a_guess(caplog: pytest.LogCaptureFixture) -> None:
+    """Four equal variants and no TheDiscDB match: the review waits for the operator instead of ripping a guess."""
+    with caplog.at_level(logging.WARNING, logger="arm_backend.identify_flow"):
+        out, rows = _identify_force_awakens(frozenset())
+    assert out["status"] == "awaiting_review"
+    assert rows["job"].manual_pause is True
+    assert "4 same-length variants" in caplog.text
+    assert "00802.mpls, 00803.mpls, 00801.mpls, 00800.mpls" in caplog.text
+
+
+def test_identify_hold_keeps_the_countdown_when_thediscdb_names_the_variant() -> None:
+    _out, rows = _identify_force_awakens(frozenset({"55,56"}))
+    assert not rows["job"].manual_pause
+
+
+
+def test_hold_names_a_variant_without_a_playlist_by_its_title_index(caplog: pytest.LogCaptureFixture) -> None:
+    from arm_common.schemas import ScanTitle
+
+    job = _job(status=JobStatus.AWAITING_REVIEW, disc_type=DiscType.BLURAY)
+    titles = [ScanTitle(index=4, duration_seconds=8286), ScanTitle(index=7, duration_seconds=8286)]
+    with caplog.at_level(logging.WARNING, logger="arm_backend.identify_flow"):
+        identify_flow._hold_a_guessed_main_feature(job, titles)
+    assert job.manual_pause is True
+    assert "(title 4, title 7)" in caplog.text
+    caplog.clear()
+    other = _job(status=JobStatus.AWAITING_REVIEW, disc_type=DiscType.BLURAY)
+    identify_flow._hold_a_guessed_main_feature(other, [])
+    assert not other.manual_pause
+    assert caplog.text == ""
