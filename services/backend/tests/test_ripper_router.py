@@ -3920,7 +3920,6 @@ def test_identify_hold_keeps_the_countdown_when_thediscdb_names_the_variant() ->
     assert not rows["job"].manual_pause
 
 
-
 def test_hold_names_a_variant_without_a_playlist_by_its_title_index(caplog: pytest.LogCaptureFixture) -> None:
     from arm_common.schemas import ScanTitle
 
