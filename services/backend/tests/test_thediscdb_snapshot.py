@@ -366,8 +366,12 @@ def test_main_movie_segment_maps_collects_every_release_of_the_film(tmp_path: Pa
     elsewhere = {"ContentHash": "D" * 32, "Titles": [_title("00001.mpls", "1,2", "MainMovie")]}
     store = _index_with(
         tmp_path,
-        [("Force (2015)", film, uhd), ("Force (2015)", film, bluray), ("Force (2015)", film, no_map),
-         ("Round (1986)", other, elsewhere)],
+        [
+            ("Force (2015)", film, uhd),
+            ("Force (2015)", film, bluray),
+            ("Force (2015)", film, no_map),
+            ("Round (1986)", other, elsewhere),
+        ],
     )
     assert store.main_movie_segment_maps("tt2488496") == frozenset({"55,56", "901,902"})
     assert store.main_movie_segment_maps("tt0000001") == frozenset()
