@@ -32,7 +32,10 @@ def clean_httpx_logger():
             'HTTP Request: GET https://www.omdbapi.com/?apikey=****&s=alien "HTTP/1.1 200 OK"',
         ),
         (f"https://x.test/a?s=1&API_KEY={_KEY}#frag", "https://x.test/a?s=1&API_KEY=****#frag"),
-        (f"https://x.test/a?key={_KEY}&token=t0k&access_token=abc", "https://x.test/a?key=****&token=****&access_token=****"),
+        (
+            f"https://x.test/a?key={_KEY}&token=t0k&access_token=abc",
+            "https://x.test/a?key=****&token=****&access_token=****",
+        ),
         (f"https://api.telegram.org/bot{_TOKEN}/sendMessage", "https://api.telegram.org/bot****/sendMessage"),
     ],
 )
