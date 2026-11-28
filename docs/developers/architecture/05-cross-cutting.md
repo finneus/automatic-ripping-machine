@@ -198,7 +198,7 @@ The WS endpoint (`/ws` on Backend) is exposed through the same nginx that fronts
 
 - Third-party API keys (TMDB, OMDB, MusicBrainz) and Apprise URLs are stored **plaintext** in the `config` table.
 - Consequence: DB dumps contain secrets. Treat Postgres backups as sensitive files.
-- Secrets must not be logged. There is no central logging filter: each site that could log a secret redacts it itself. Apprise URLs go through `redact_apprise_url` (scheme only), and bash-hook output goes through `redact_secrets` before it is stored. New code that logs a `config` row or a provider URL must do the same.
+- Secrets must not be logged. There is no central logging filter: each site that could log a secret redacts it itself. Apprise URLs go through `redact_apprise_url` (scheme only), and bash-hook output goes through `redact_secrets` before it is stored. Two logger filters cover lines ARM does not write itself: apprise's own messages lose their URLs (`apprise_log_redaction`), and httpx's `HTTP Request:` lines lose the values of `apikey`/`api_key`/`key`/`token`/`access_token` query parameters and Telegram bot tokens in URL paths (`http_log_redaction`, #766: OMDb takes its key in the query). New code that logs a `config` row or a provider URL must still redact it itself.
 
 ## Logging
 
